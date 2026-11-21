@@ -24,7 +24,7 @@ COLUMNS = (["form", "n_envs", "seed", "iteration", "phase", "steps", "samples", 
             "samples_per_s", "env_steps_per_s"]
            + [f"{s}_s" for s in STAGES] + [f"{s}_own_s" for s in STAGES]
            + ["torch_peak_mib", "smi_used_mib", "episodes", "ep_return_mean", "ep_len_mean",
-              "record_s"])
+              "record_s", "load1", "gpu_util_pct", "other_procs", "other_mib"])
 
 PACKAGES = ("isaacsim", "isaaclab", "isaaclab_rl", "rsl-rl-lib", "torch", "warp-lang", "numpy",
             "gymnasium", "wheeledlab", "wheeledlab_tasks", "wheeledlab_rl", "wheeledlab-bench")
@@ -71,7 +71,7 @@ class RunRecord:
 
     def row(self, iteration: int, steps: int, wall_s: float, total: dict, own: dict,
             torch_peak_mib, smi_used_mib, episodes: int, ep_return_mean, ep_len_mean,
-            record_s: float) -> None:
+            record_s: float, load: dict | None = None) -> None:
         if not self._meta_written:
             self.write_meta()
         samples = steps * self.n_envs
@@ -83,7 +83,7 @@ class RunRecord:
                  torch_peak_mib=torch_peak_mib, smi_used_mib=smi_used_mib, episodes=episodes,
                  ep_return_mean="" if ep_return_mean is None else f"{ep_return_mean:.6g}",
                  ep_len_mean="" if ep_len_mean is None else f"{ep_len_mean:.6g}",
-                 record_s=f"{record_s:.6f}")
+                 record_s=f"{record_s:.6f}", **(load or {}))
         for s in STAGES:
             r[f"{s}_s"] = f"{total[s]:.6f}" if s in total else ""
             r[f"{s}_own_s"] = f"{own[s]:.6f}" if s in own else ""

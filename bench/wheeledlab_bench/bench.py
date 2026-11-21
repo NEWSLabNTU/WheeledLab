@@ -20,11 +20,11 @@ from .timers import StageTimer
 
 class Bench:
     def __init__(self, out_dir: str, form: str, n_envs: int, seed=None, mode: str = "sync",
-                 warmup: int = 20, smi_every: int = 10, settings: dict | None = None):
+                 warmup: int = 20, smi_every: int = 10, settings: dict | None = None, gpu: int = 0):
         self.timer = StageTimer(mode)
         self.record = RunRecord(out_dir, form, n_envs, seed, dict(settings or {}, timers=mode),
                                 warmup=warmup)
-        self.n_envs, self.smi_every = n_envs, smi_every
+        self.n_envs, self.smi_every, self.gpu = n_envs, smi_every, gpu
         self.iteration, self.steps = 0, 0
         self._t0 = None                        # this iteration's start
         self._torch = None
@@ -85,12 +85,17 @@ class Bench:
             inner = total.get("returns", 0.0) + total.get("update", 0.0)
             total["rollout"] = own["rollout"] = wall - inner
         peak = smi = ""
+        # the host's load, every row; the GPU's, with nvidia-smi's sample (the run's own
+        # processes are not counted as others)
+        load = {"load1": f"{os.getloadavg()[0]:.2f}"}
         if self._torch is not None:
             peak = round(self._torch.cuda.max_memory_allocated() / 2**20)
         if self.smi_every and (self.iteration - self._last_smi >= self.smi_every or self.iteration == 0):
             from . import gpu
             try:
                 smi = gpu.own_used_mib()
+                o = gpu.others(self.gpu)
+                load.update(gpu_util_pct=o["util_pct"], other_procs=o["procs"], other_mib=o["procs_mib"])
             except Exception:
                 smi = ""
             self._last_smi = self.iteration
@@ -103,7 +108,7 @@ class Bench:
             with self._torch_mod(self._done_n).inference_mode():
                 self._done_ret.zero_(), self._done_len.zero_(), self._done_n.zero_()
         self.record.row(self.iteration, self.steps, wall, total, own, peak, smi, n or 0, ret, ln,
-                        time.perf_counter() - t_rec)
+                        time.perf_counter() - t_rec, load)
         self.iteration += 1
         self.steps = 0
         # the summary at every iteration: an app that exits hard (Kit's close) runs no atexit

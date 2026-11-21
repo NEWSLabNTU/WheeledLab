@@ -47,7 +47,8 @@ def main(argv=None) -> int:
         return 3
 
     bench = Bench(a.out, a.form, a.n_envs, seed=a.seed, mode=a.timers, warmup=a.warmup,
-                  settings=dict(script=script, args=rest, gpu_before=idle))
+                  settings=dict(script=script, args=rest, gpu_before=idle,
+                                load_before=os.getloadavg()), gpu=a.gpu)
     hooks.install(bench)
     bench.summary_extra = lambda: dict(patched=dict(hooks.patched), unpatched=hooks.unpatched())
 
