@@ -3,6 +3,7 @@ Boilerplate code for starting up IsaacLab backend
 """
 
 import argparse
+import os
 import sys
 
 def startup(parser=None, prelaunch_callback=None, register_cfgs=True):
@@ -29,7 +30,8 @@ def startup(parser=None, prelaunch_callback=None, register_cfgs=True):
     if prelaunch_callback is not None:
         prelaunch_callback(args_cli)
 
-    args_cli.enable_cameras = True
+    # upstream forces cameras on; WHEELEDLAB_ENABLE_CAMERAS=0 leaves them off (state-only tasks)
+    args_cli.enable_cameras = os.environ.get("WHEELEDLAB_ENABLE_CAMERAS", "1") != "0"
 
     sys.argv = [sys.argv[0]] + hydra_args
 
