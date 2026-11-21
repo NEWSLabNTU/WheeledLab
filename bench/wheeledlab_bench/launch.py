@@ -36,7 +36,8 @@ def main(argv=None) -> int:
     ap.add_argument("--require-idle", action="store_true",
                     help="refuse while another process holds the GPU")
     ap.add_argument("--max-sync-ms", type=float, default=0.05,
-                    help="refuse when a kernel+sync takes longer (p50); a free GPU takes ~0.01 ms")
+                    help="refuse when a kernel+sync takes longer (p90: an other user busy in bursts "
+                         "leaves p50 low); a free GPU takes ~0.01 ms")
     ap.add_argument("--allow-shared", action="store_true",
                     help="run anyway on a shared GPU (a smoke, not a measurement); the probe is recorded")
     a = ap.parse_args(argv[:i])
@@ -55,9 +56,9 @@ def main(argv=None) -> int:
         probe = gpu.sync_probe(0 if os.environ.get("CUDA_VISIBLE_DEVICES") else a.gpu)
     except Exception as e:
         probe = {"error": str(e)}
-    if probe.get("p50_ms", 0) > a.max_sync_ms and not a.allow_shared:
-        print(f"wheeledlab_bench: GPU {a.gpu} is time-sliced with another context: kernel+sync p50 "
-              f"{probe['p50_ms']} ms > {a.max_sync_ms} ms ({json.dumps(idle)}); a measurement "
+    if probe.get("p90_ms", 0) > a.max_sync_ms and not a.allow_shared:
+        print(f"wheeledlab_bench: GPU {a.gpu} is time-sliced with another context: kernel+sync "
+              f"p50 {probe['p50_ms']} ms, p90 {probe['p90_ms']} ms > {a.max_sync_ms} ms ({json.dumps(idle)}); a measurement "
               "needs an exclusive GPU (--allow-shared runs anyway, as a smoke)", file=sys.stderr)
         return 4
 
