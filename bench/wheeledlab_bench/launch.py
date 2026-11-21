@@ -77,7 +77,8 @@ def main(argv=None) -> int:
                                 idle_others_ok=a.idle_others_ok,
                                 allow_shared=a.allow_shared), gpu=a.gpu)
     hooks.install(bench)
-    bench.summary_extra = lambda: dict(patched=dict(hooks.patched), unpatched=hooks.unpatched())
+    bench.summary_extra = lambda: dict(patched=dict(hooks.patched), unpatched=hooks.unpatched(),
+                                        calls=dict(hooks.calls))
 
     def done():
         bench.close()
