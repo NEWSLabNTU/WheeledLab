@@ -90,9 +90,14 @@ class RunRecord:
         self._w.writerow(r)
         self._f.flush()
 
+    def summary(self, **summary) -> None:
+        tmp = os.path.join(self.out_dir, "summary.json.tmp")
+        with open(tmp, "w") as f:
+            json.dump(summary, f, indent=1, default=str)
+        os.replace(tmp, os.path.join(self.out_dir, "summary.json"))
+
     def close(self, **summary) -> None:
         if not self._meta_written:
             self.write_meta()
         self._f.close()
-        with open(os.path.join(self.out_dir, "summary.json"), "w") as f:
-            json.dump(summary, f, indent=1, default=str)
+        self.summary(**summary)

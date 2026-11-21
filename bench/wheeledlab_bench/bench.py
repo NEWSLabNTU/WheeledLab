@@ -37,6 +37,7 @@ class Bench:
         self._done_ret = self._done_len = self._done_n = None
         self._last_smi = 0
         self.closed = False
+        self.summary_extra = None             # a callable giving more summary fields (hooks)
 
     # -- explicit API -------------------------------------------------------------------------
     def stage(self, name: str):
@@ -54,21 +55,24 @@ class Bench:
         self.steps += 1
         if not self.n_envs:
             self.n_envs = self.record.n_envs = int(reward.numel())
-        if self._ret is None:
-            t = self._torch_mod(reward)
-            self._ret = t.zeros_like(reward, dtype=t.float32)
-            self._len = t.zeros_like(reward, dtype=t.float32)
-            self._done_ret = t.zeros((), dtype=t.float64, device=reward.device)
-            self._done_len = t.zeros((), dtype=t.float64, device=reward.device)
-            self._done_n = t.zeros((), dtype=t.int64, device=reward.device)
-        self._ret += reward.reshape(self._ret.shape).float()
-        self._len += 1
-        d = done.reshape(self._ret.shape).bool()
-        self._done_ret += (self._ret * d).sum(dtype=self._done_ret.dtype)
-        self._done_len += (self._len * d).sum(dtype=self._done_len.dtype)
-        self._done_n += d.sum()
-        self._ret *= ~d
-        self._len *= ~d
+        t = self._torch_mod(reward)
+        # the accumulators are inference tensors when the rollout runs under inference_mode
+        # (rsl_rl's does), so every update to them runs under it too
+        with t.inference_mode():
+            if self._ret is None:
+                self._ret = t.zeros_like(reward, dtype=t.float32)
+                self._len = t.zeros_like(reward, dtype=t.float32)
+                self._done_ret = t.zeros((), dtype=t.float64, device=reward.device)
+                self._done_len = t.zeros((), dtype=t.float64, device=reward.device)
+                self._done_n = t.zeros((), dtype=t.int64, device=reward.device)
+            self._ret += reward.reshape(self._ret.shape).float()
+            self._len += 1
+            d = done.reshape(self._ret.shape).bool()
+            self._done_ret += (self._ret * d).sum(dtype=self._done_ret.dtype)
+            self._done_len += (self._len * d).sum(dtype=self._done_len.dtype)
+            self._done_n += d.sum()
+            self._ret *= ~d
+            self._len *= ~d
 
     def end_iteration(self) -> None:
         """The iteration's end (after the policy update): write its row."""
@@ -96,18 +100,23 @@ class Bench:
             if n:
                 ret = float(self._done_ret.item()) / n
                 ln = float(self._done_len.item()) / n
-            self._done_ret.zero_(), self._done_len.zero_(), self._done_n.zero_()
+            with self._torch_mod(self._done_n).inference_mode():
+                self._done_ret.zero_(), self._done_len.zero_(), self._done_n.zero_()
         self.record.row(self.iteration, self.steps, wall, total, own, peak, smi, n or 0, ret, ln,
                         time.perf_counter() - t_rec)
         self.iteration += 1
         self.steps = 0
+        # the summary at every iteration: an app that exits hard (Kit's close) runs no atexit
+        self.record.summary(iterations=self.iteration, closed=False,
+                            **(self.summary_extra() if self.summary_extra else {}))
         self._sync()
         self._t0 = time.perf_counter()        # the record's own time is outside every row
 
     def close(self, **summary) -> None:
         if not self.closed:
             self.closed = True
-            self.record.close(iterations=self.iteration, **summary)
+            extra = self.summary_extra() if self.summary_extra else {}
+            self.record.close(iterations=self.iteration, closed=True, **{**extra, **summary})
 
     # -- helpers ------------------------------------------------------------------------------
     def _sync(self) -> None:

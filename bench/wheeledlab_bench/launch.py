@@ -49,9 +49,10 @@ def main(argv=None) -> int:
     bench = Bench(a.out, a.form, a.n_envs, seed=a.seed, mode=a.timers, warmup=a.warmup,
                   settings=dict(script=script, args=rest, gpu_before=idle))
     hooks.install(bench)
+    bench.summary_extra = lambda: dict(patched=dict(hooks.patched), unpatched=hooks.unpatched())
 
     def done():
-        bench.close(patched=hooks.patched, unpatched=hooks.unpatched())
+        bench.close()
     atexit.register(done)
 
     sys.argv = [script, *rest]
