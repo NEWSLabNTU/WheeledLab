@@ -33,7 +33,12 @@ def main(argv=None) -> int:
     ap.add_argument("--seed", default=None)
     ap.add_argument("--n-envs", type=int, default=0, help="0: from the env's first step")
     ap.add_argument("--gpu", type=int, default=0)
-    ap.add_argument("--require-idle", action="store_true")
+    ap.add_argument("--require-idle", action="store_true",
+                    help="refuse while another process holds the GPU")
+    ap.add_argument("--max-sync-ms", type=float, default=0.05,
+                    help="refuse when a kernel+sync takes longer (p50); a free GPU takes ~0.01 ms")
+    ap.add_argument("--allow-shared", action="store_true",
+                    help="run anyway on a shared GPU (a smoke, not a measurement); the probe is recorded")
     a = ap.parse_args(argv[:i])
     script, rest = argv[i + 1], argv[i + 2:]
 
@@ -45,10 +50,21 @@ def main(argv=None) -> int:
     if a.require_idle and idle.get("procs"):
         print(f"wheeledlab_bench: GPU {a.gpu} is not idle: {json.dumps(idle)}", file=sys.stderr)
         return 3
+    try:
+        # the GPU index as this process sees it (CUDA_VISIBLE_DEVICES renumbers)
+        probe = gpu.sync_probe(0 if os.environ.get("CUDA_VISIBLE_DEVICES") else a.gpu)
+    except Exception as e:
+        probe = {"error": str(e)}
+    if probe.get("p50_ms", 0) > a.max_sync_ms and not a.allow_shared:
+        print(f"wheeledlab_bench: GPU {a.gpu} is time-sliced with another context: kernel+sync p50 "
+              f"{probe['p50_ms']} ms > {a.max_sync_ms} ms ({json.dumps(idle)}); a measurement "
+              "needs an exclusive GPU (--allow-shared runs anyway, as a smoke)", file=sys.stderr)
+        return 4
 
     bench = Bench(a.out, a.form, a.n_envs, seed=a.seed, mode=a.timers, warmup=a.warmup,
                   settings=dict(script=script, args=rest, gpu_before=idle,
-                                load_before=os.getloadavg()), gpu=a.gpu)
+                                load_before=os.getloadavg(), sync_probe_before=probe,
+                                allow_shared=a.allow_shared), gpu=a.gpu)
     hooks.install(bench)
     bench.summary_extra = lambda: dict(patched=dict(hooks.patched), unpatched=hooks.unpatched())
 

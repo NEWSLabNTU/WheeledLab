@@ -96,6 +96,8 @@ class Bench:
                 smi = gpu.own_used_mib()
                 o = gpu.others(self.gpu)
                 load.update(gpu_util_pct=o["util_pct"], other_procs=o["procs"], other_mib=o["procs_mib"])
+                load["sync_p50_ms"] = gpu.sync_probe(self._torch.cuda.current_device(), n=50)["p50_ms"] \
+                    if self._torch is not None else ""
             except Exception:
                 smi = ""
             self._last_smi = self.iteration

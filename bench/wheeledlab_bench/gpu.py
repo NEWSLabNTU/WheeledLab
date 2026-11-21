@@ -37,3 +37,25 @@ def others(index: int, pid: int | None = None) -> dict:
     return dict(gpu=index, name=g["name"], driver=g["driver"], util_pct=g["util_pct"],
                 procs=len(theirs), procs_mib=sum(a["used_mib"] for a in theirs),
                 pids=[a["pid"] for a in theirs])
+
+
+def sync_probe(index: int, n: int = 200) -> dict:
+    """The latency of a one-element kernel plus a device synchronisation on GPU `index`, ms.
+
+    On a free GPU it is about 0.01 ms. A GPU time-sliced with another process's busy context
+    makes every synchronising call wait for that context's slice (2.3 ms measured on 241 against
+    a 100 %-busy job), and Isaac Lab's articulation step makes several such calls per physics
+    substep, so its throughput falls about 100x while Cartpole's barely moves (scensim 094)."""
+    import time
+    import torch
+    dev = torch.device(f"cuda:{index}")
+    x = torch.ones(8, device=dev)
+    torch.cuda.synchronize(dev)
+    ts = []
+    for _ in range(n):
+        t0 = time.perf_counter()
+        x.add_(1)
+        torch.cuda.synchronize(dev)
+        ts.append((time.perf_counter() - t0) * 1e3)
+    ts.sort()
+    return dict(p50_ms=round(ts[n // 2], 4), p90_ms=round(ts[int(n * 0.9)], 4), max_ms=round(ts[-1], 4))
