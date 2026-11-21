@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "p4-leadbrake"
+version = "0.1.0"
+description = "scensim roadmap 094 P4's stock side: the lead car brakes, a hand-written Isaac Lab task"
+requires-python = ">=3.10"
+dependencies = []   # Isaac Lab 3.0 (isaaclab, isaaclab_rl) and rsl-rl-lib, from the overlay
+
+# Isaac Lab's train CLI imports the packages of this group before it looks up a task id
+[project.entry-points."isaaclab.tasks"]
+p4_leadbrake = "p4_leadbrake"
+
+[tool.setuptools]
+packages = ["p4_leadbrake"]
