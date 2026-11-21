@@ -32,6 +32,9 @@ export VK_ICD_FILENAMES=${VK_ICD_FILENAMES:-/usr/share/vulkan/icd.d/nvidia_icd.j
 gate=(--require-idle); [ "${IDLE_OTHERS:-0}" = 1 ] && gate+=(--idle-others-ok)
 [ "${SHARED:-0}" = 1 ] && gate=(--allow-shared)
 mkdir -p "$out/$stage"
+# training writes to source/wheeledlab_rl/logs/<run_name>; the out-dir's name is in it, so two
+# attempts (two out-dirs) never share a training directory
+tag=$(basename "$(cd "$out" && pwd)")
 TRAIN=(source/wheeledlab_rl/scripts/train_rl.py -r RSS_DRIFT_CONFIG train.log.no_wandb=True
        train.log.video=False)
 
@@ -47,13 +50,13 @@ run() {
         --out "$d" --form "ported-cam$cam" --timers "$timers" --warmup "$warmup" --seed "$seed" \
         --gpu "$GPU" "${gate[@]}" -- "${TRAIN[@]}" agent.seed="$seed" \
         train.num_iterations="$iters" env_setup.num_envs="$n" \
-        train.log.run_name="p1-$stage-$name" > "$d.log" 2>&1
+        train.log.run_name="p1-$tag-$stage-$name" > "$d.log" 2>&1
 }
 
 evaluate() {
     local name=$1 rd
-    rd=$(ls -d source/wheeledlab_rl/logs/p1-$stage-$name 2>/dev/null) || {
-        echo "$name: no run directory source/wheeledlab_rl/logs/p1-$stage-$name"; return 1; }
+    rd=$(ls -d "source/wheeledlab_rl/logs/p1-$tag-$stage-$name" 2>/dev/null) || {
+        echo "$name: no run directory source/wheeledlab_rl/logs/p1-$tag-$stage-$name"; return 1; }
     WHEELEDLAB_ENABLE_CAMERAS=0 env -u DISPLAY "$OV" bench/p1/eval_drift.py --run-path "$rd" \
         --out "$out/$stage/$name.eval.json" > "$out/$stage/$name.eval.log" 2>&1
     grep EVAL "$out/$stage/$name.eval.log" | cut -c1-400
