@@ -11,8 +11,8 @@ import importlib.abc
 import importlib.machinery
 import sys
 
-# class name -> {method: stage}; the env's step also feeds the learning curve, and PPO.update
-# ends the iteration
+# class name -> {method: stage}; the env's step also feeds the learning curve, PPO.update
+# ends the iteration, and the runner's learn() returning ends the run (stage None: not timed)
 TARGETS = {
     "ManagerBasedRLEnv": {"step": "env_step", "_reset_idx": "resets"},
     "ActionManager": {"process_action": "actions", "apply_action": "actions"},
@@ -25,6 +25,7 @@ TARGETS = {
     "ObservationManager": {"compute": "observations"},
     "PPO": {"act": "inference", "process_env_step": "storage", "compute_returns": "returns",
             "update": "update"},
+    "OnPolicyRunner": {"learn": None},
 }
 PREFIXES = ("isaaclab", "rsl_rl")
 
@@ -61,6 +62,16 @@ def _wrap(cls, method: str, stage: str):
             bench.end_iteration()
             return out
         return update
+
+    if method == "learn":
+        # Kit's close ends the process without atexit, so a run is closed here, when training
+        # returns, and summary.json's "closed": true tells a finished run from a crashed one
+        @functools.wraps(fn)
+        def learn(self, *a, **k):
+            out = fn(self, *a, **k)
+            bench.close()
+            return out
+        return learn
 
     @functools.wraps(fn)
     def timed(self, *a, **k):
