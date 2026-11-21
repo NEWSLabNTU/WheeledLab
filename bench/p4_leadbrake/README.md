@@ -41,8 +41,11 @@ finds it.
 
 ## Known differences and observations
 
-- At rest the suspension sits 2 cm compressed (q = 0.019-0.022 m), where the file's sag puts it at
-  q = 0, although PhysX holds the file's stiffness, damping and masses exactly. Open.
+- Solver iterations are Isaac Lab's default (`ArticulationRootPropertiesCfg` with none set),
+  as engine B has them. The suspension's reported position converges with them, while its force
+  is the design load at every setting (PhysX's projected joint forces: 3860 and 4379 N per front
+  and rear corner, 1680 kg x g in all). At rest q is 0.0047 to 0.0054 m at the default and 0.019
+  to 0.022 m at 8 position iterations, where the file's sag puts it at 0. Run 2 trained at 8.
 - A brake torque computed each step from the wheel's speed chatters (3000 N m swings the 1.37 kg m^2
   wheel 18 rad/s per 120 Hz step) and does not stop the car; the implicit damping does: 10.4 m/s
   to rest in 5.6 m (mu g).

@@ -170,9 +170,11 @@ def car_cfg(usd_path: str):
             usd_path=usd_path,
             rigid_props=sim_utils.RigidBodyPropertiesCfg(max_depenetration_velocity=10.0),
             # the chassis box encloses the wheels (the file's choices): no self-collisions
+            # solver iterations left at Isaac Lab's default (None: the USD's, PhysX's own), as
+            # engine B has them: the suspension's reported position converges with them (2 cm
+            # off at 8, 5 mm at the default, under the same spring force)
             articulation_props=sim_utils.ArticulationRootPropertiesCfg(
-                enabled_self_collisions=False, solver_position_iteration_count=8,
-                solver_velocity_iteration_count=1),
+                enabled_self_collisions=False),
         ),
         init_state=ArticulationCfg.InitialStateCfg(pos=(0.0, 0.0, 0.0)),
         actuators={
