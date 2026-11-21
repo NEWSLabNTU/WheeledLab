@@ -14,6 +14,9 @@ def reset_root_state(
     # valid_posns_and_rots: dict[str, tuple[float, float]],
     asset_cfg: SceneEntityCfg = SceneEntityCfg("robot"),
 ):
+    # Isaac Lab 3.0 resets every env with env_ids=slice(None)
+    if env_ids is None or isinstance(env_ids, slice):
+        env_ids = torch.arange(env.num_envs, device=env.device)[env_ids if isinstance(env_ids, slice) else slice(None)]
     # access the used quantities (to enable type-hinting)
     asset: RigidObject | Articulation = env.scene[asset_cfg.name]
     terrain: TerrainImporter = env.scene.terrain
