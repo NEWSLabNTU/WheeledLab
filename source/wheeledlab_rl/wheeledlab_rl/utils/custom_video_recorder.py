@@ -1,9 +1,7 @@
 import os
 from typing import Callable
 
-import av
 import gymnasium as gym
-import wandb
 from gymnasium import logger
 from gymnasium.core import ActType, ObsType
 from gymnasium.wrappers.rendering import RecordVideo
@@ -24,6 +22,8 @@ class CustomRecordVideo(RecordVideo):
         video_resolution: tuple[int, int] = (1280, 720),
         video_crf: int = 30,
     ):
+        if enable_wandb:
+            import wandb  # only with wandb on: neither wandb nor av is needed without video
         if enable_wandb and wandb.run.name is None:
             raise ValueError("wandb must be initialized before wrapping.")
 
@@ -49,6 +49,8 @@ class CustomRecordVideo(RecordVideo):
             logger.warn("Ignored saving a video as there were zero frames to save.")
         else:
             path = os.path.join(self.video_folder, f"{self._video_name}.mp4")
+            import av
+
             output = av.open(path, "w")
             output_stream = output.add_stream(
                 "libx264",
@@ -68,6 +70,8 @@ class CustomRecordVideo(RecordVideo):
             output.mux(packet)
             output.close()
             if self.enable_wandb:
+                import wandb
+
                 wandb.log({"Video": wandb.Video(path)}, commit=False)
 
         self.recorded_frames = []

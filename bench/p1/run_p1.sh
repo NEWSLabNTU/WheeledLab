@@ -15,6 +15,8 @@
 #   OV        the Isaac Lab overlay's python (required)
 #   GPU       the GPU index to run on (default 0); runs set CUDA_VISIBLE_DEVICES to it (Kit
 #             warns that this "can lead to undesired behavior"; it ran clean on 241)
+#   IDLE_OTHERS=1  accept another user's process on the GPU while it runs nothing (0 % over a
+#             10 s watch, and the sync probe passes), e.g. a loaded model server; recorded
 #   SHARED=1  run on a shared GPU anyway (a smoke: the probe is recorded, the numbers are not
 #             a measurement)
 set -euo pipefail
@@ -27,7 +29,8 @@ cd "$here"
 export OMNI_KIT_ACCEPT_EULA=YES PYTHONNOUSERSITE=1 CUDA_VISIBLE_DEVICES=$GPU
 export VK_ICD_FILENAMES=${VK_ICD_FILENAMES:-/usr/share/vulkan/icd.d/nvidia_icd.json}
 # --gpu is nvidia-smi's index (the physical GPU); the run itself sees it as cuda:0
-gate=(--require-idle); [ "${SHARED:-0}" = 1 ] && gate=(--allow-shared)
+gate=(--require-idle); [ "${IDLE_OTHERS:-0}" = 1 ] && gate+=(--idle-others-ok)
+[ "${SHARED:-0}" = 1 ] && gate=(--allow-shared)
 mkdir -p "$out/$stage"
 TRAIN=(source/wheeledlab_rl/scripts/train_rl.py -r RSS_DRIFT_CONFIG train.log.no_wandb=True
        train.log.video=False)

@@ -4,7 +4,11 @@
         [--warmup 20] [--seed S] [--gpu 0] [--require-idle] -- SCRIPT [ARGS...]
 
 The script runs as `__main__` with ARGS as its argv. `--require-idle` refuses to start while
-another process holds GPU `--gpu`; the check's result goes into the run's settings either way.
+another process holds GPU `--gpu`, unless `--idle-others-ok` and the GPU's utilisation stays at
+0 % over a 10 s watch (another user's process that holds memory and runs nothing, such as a
+loaded model server); the check's result goes into the run's settings either way, and the CSV
+records the other processes and the utilisation every few iterations, so one that wakes up
+during the run shows.
 """
 from __future__ import annotations
 
@@ -35,6 +39,9 @@ def main(argv=None) -> int:
     ap.add_argument("--gpu", type=int, default=0)
     ap.add_argument("--require-idle", action="store_true",
                     help="refuse while another process holds the GPU")
+    ap.add_argument("--idle-others-ok", action="store_true",
+                    help="with --require-idle: accept other processes when the GPU's utilisation "
+                         "stays at 0 %% over a 10 s watch")
     ap.add_argument("--max-sync-ms", type=float, default=0.05,
                     help="refuse when a kernel+sync takes longer (p90: an other user busy in bursts "
                          "leaves p50 low); a free GPU takes ~0.01 ms")
@@ -48,7 +55,9 @@ def main(argv=None) -> int:
         idle = gpu.others(a.gpu)
     except Exception as e:
         idle = {"error": str(e)}
-    if a.require_idle and idle.get("procs"):
+    if a.require_idle and idle.get("procs") and a.idle_others_ok:
+        idle["util_watch_pct"] = gpu.util_watch(a.gpu)
+    if a.require_idle and idle.get("procs") and (not a.idle_others_ok or max(idle["util_watch_pct"]) > 0):
         print(f"wheeledlab_bench: GPU {a.gpu} is not idle: {json.dumps(idle)}", file=sys.stderr)
         return 3
     try:
@@ -65,6 +74,7 @@ def main(argv=None) -> int:
     bench = Bench(a.out, a.form, a.n_envs, seed=a.seed, mode=a.timers, warmup=a.warmup,
                   settings=dict(script=script, args=rest, gpu_before=idle,
                                 load_before=os.getloadavg(), sync_probe_before=probe,
+                                idle_others_ok=a.idle_others_ok,
                                 allow_shared=a.allow_shared), gpu=a.gpu)
     hooks.install(bench)
     bench.summary_extra = lambda: dict(patched=dict(hooks.patched), unpatched=hooks.unpatched())

@@ -39,6 +39,17 @@ def others(index: int, pid: int | None = None) -> dict:
                 pids=[a["pid"] for a in theirs])
 
 
+def util_watch(index: int, seconds: int = 10) -> list[int]:
+    """The GPU's utilisation, %, sampled once a second for `seconds`."""
+    import time
+    out = []
+    for k in range(seconds):
+        out.append(next(g for g in gpus() if g["index"] == index)["util_pct"])
+        if k + 1 < seconds:
+            time.sleep(1.0)
+    return out
+
+
 def sync_probe(index: int, n: int = 200) -> dict:
     """The latency of a one-element kernel plus a device synchronisation on GPU `index`, ms.
 
