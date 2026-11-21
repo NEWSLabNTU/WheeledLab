@@ -16,8 +16,8 @@ INSTALL_REQUIRES = [
     "psutil",
     "rich",
     "av",
-    "rsl-rl-lib>=2.3.0",
-    "gymnasium==1.0.0",
+    "rsl-rl-lib>=5.4",
+    "gymnasium>=1.0.0",
 ]
 
 # Installation operation

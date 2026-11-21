@@ -46,7 +46,11 @@ import torch
 from tqdm import tqdm
 from rsl_rl.runners import OnPolicyRunner
 
-from isaaclab.utils.io import load_pickle
+import pickle
+
+def load_pickle(path):
+    with open(path, "rb") as f:
+        return pickle.load(f)
 from isaaclab_tasks.utils import get_checkpoint_path
 from isaaclab_tasks.utils.hydra import hydra_task_config
 from isaaclab.envs import ManagerBasedRLEnvCfg

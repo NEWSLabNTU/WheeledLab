@@ -1,127 +1,32 @@
-import warnings
-import rsl_rl
-from rsl_rl import runners
 import os
 
-try:
-    from tqdm import TqdmExperimentalWarning
-
-    # Remove experimental warning
-    warnings.filterwarnings("ignore", category=TqdmExperimentalWarning)
-    from tqdm.rich import tqdm
-except ImportError:
-    # Rich not installed, we only throw an error
-    # if the progress bar is used
-    tqdm = None
-
-import time
-import torch
-from collections import deque
+from rsl_rl import runners
 
 
 class OnPolicyRunner(runners.OnPolicyRunner):
-    """Override for logging purposes"""
+    """rsl_rl's runner with WheeledLab's logging choices (rsl-rl >= 5).
+
+    Upstream's runner was a copy of rsl-rl 2.3's `learn()` loop, kept to choose the logger.
+    rsl-rl 5 changed that loop's API (one observation TensorDict, `act(obs)`, the logger
+    object), so the loop is rsl_rl's own now and only the choices stay here:
+
+    - `log_cfg.no_log`: no log directory, so nothing is written or saved;
+    - `log_cfg.no_wandb`: TensorBoard instead of Weights & Biases;
+    - checkpoints go to `<run_log_dir>/<model_save_dirname>/model_<it>.pt`, where
+      `play_policy.py` looks for them.
+    """
 
     def __init__(self, env, agent_cfg, log_cfg, device="cpu"):
-        super().__init__(env, agent_cfg, log_cfg.run_log_dir, device)
+        cfg = dict(agent_cfg)
         self.no_log = log_cfg.no_log
         self.no_wandb = log_cfg.no_wandb
-        self.logger_type = None
+        self.model_dir = log_cfg.model_save_path
         if not self.no_wandb:
-            self.logger_type = "wandb"
-        # self.pbar = tqdm(total=self.cfg.get("rl_max_iterations", 0))
+            cfg["logger"] = {"class_name": "WandbLogWriter", "project_name": log_cfg.wandb_project}
+        else:
+            cfg["logger"] = "tensorboard"
+        super().__init__(env, cfg, None if self.no_log else log_cfg.run_log_dir, device)
 
-    def learn(self, num_learning_iterations, init_at_random_ep_len=False):
-        # initialize writer
-        if not self.no_log and self.logger_type == "wandb":
-            from rsl_rl.utils.wandb_utils import WandbSummaryWriter
-
-            self.writer = WandbSummaryWriter(
-                log_dir=self.log_dir, flush_secs=10, cfg=self.cfg
-            )
-            self.writer.log_config(
-                self.env.cfg, self.cfg, self.alg_cfg, self.policy_cfg
-            )
-
-        if init_at_random_ep_len:
-            self.env.episode_length_buf = torch.randint_like(
-                self.env.episode_length_buf, high=int(self.env.max_episode_length)
-            )
-        obs, extras = self.env.get_observations()
-        critic_obs = extras["observations"].get("critic", obs)
-        obs, critic_obs = obs.to(self.device), critic_obs.to(self.device)
-        self.train_mode()  # switch to train mode (for dropout for example)
-
-        ep_infos = []
-        rewbuffer = deque(maxlen=100)
-        lenbuffer = deque(maxlen=100)
-        cur_reward_sum = torch.zeros(
-            self.env.num_envs, dtype=torch.float, device=self.device
-        )
-        cur_episode_length = torch.zeros(
-            self.env.num_envs, dtype=torch.float, device=self.device
-        )
-
-        start_iter = self.current_learning_iteration
-        tot_iter = start_iter + num_learning_iterations
-        for it in tqdm(range(start_iter, tot_iter)):
-            start = time.time()
-            # Rollout
-            with torch.inference_mode():
-                for i in range(self.num_steps_per_env):
-                    actions = self.alg.act(obs, critic_obs)
-                    obs, rewards, dones, infos = self.env.step(actions)
-                    if actions.isnan().any():
-                        raise ValueError("NaN in actions")
-                    obs = self.obs_normalizer(obs)
-                    if "critic" in infos["observations"]:
-                        critic_obs = self.critic_obs_normalizer(
-                            infos["observations"]["critic"]
-                        )
-                    else:
-                        critic_obs = obs
-                    obs, critic_obs, rewards, dones = (
-                        obs.to(self.device),
-                        critic_obs.to(self.device),
-                        rewards.to(self.device),
-                        dones.to(self.device),
-                    )
-                    self.alg.process_env_step(rewards, dones, infos)
-
-                    if not self.no_log:
-                        # Book keeping
-                        # note: we changed logging to use "log" instead of "episode" to avoid confusion with
-                        # different types of logging data (rewards, curriculum, etc.)
-                        if "episode" in infos:
-                            ep_infos.append(infos["episode"])
-                        elif "log" in infos:
-                            ep_infos.append(infos["log"])
-                        cur_reward_sum += rewards
-                        cur_episode_length += 1
-                        new_ids = (dones > 0).nonzero(as_tuple=False)
-                        rewbuffer.extend(
-                            cur_reward_sum[new_ids][:, 0].cpu().numpy().tolist()
-                        )
-                        lenbuffer.extend(
-                            cur_episode_length[new_ids][:, 0].cpu().numpy().tolist()
-                        )
-                        cur_reward_sum[new_ids] = 0
-                        cur_episode_length[new_ids] = 0
-
-                stop = time.time()
-                collection_time = stop - start
-
-                # Learning step
-                start = stop
-                self.alg.compute_returns(critic_obs)
-
-            loss_dict = self.alg.update()
-            stop = time.time()
-            learn_time = stop - start
-            self.current_learning_iteration = it
-            if not self.no_log:
-                if not self.no_wandb:
-                    self.log(locals())
-                if it % self.save_interval == 0:
-                    self.save(os.path.join(self.log_dir, "models", f"model_{it}.pt"))
-            ep_infos.clear()
+    def save(self, path, infos=None):
+        os.makedirs(self.model_dir, exist_ok=True)
+        super().save(os.path.join(self.model_dir, os.path.basename(path)), infos)

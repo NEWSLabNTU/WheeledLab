@@ -293,7 +293,7 @@ class DriftRewardsCfg:
     )
 
     term_pens = RewTerm(
-        func = mdp.rewards.is_terminated_term,
+        func = mdp.is_terminated_term,
         params={"term_keys": ["out_of_bounds"]},
         weight = -5000.,
     )

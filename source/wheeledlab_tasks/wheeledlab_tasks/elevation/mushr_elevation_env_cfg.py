@@ -22,8 +22,8 @@ from isaaclab.managers import (
 )
 
 from isaaclab.utils.noise import (
-    AdditiveUniformNoiseCfg as Unoise,
-    AdditiveGaussianNoiseCfg as Gnoise,
+    UniformNoiseCfg as Unoise,
+    GaussianNoiseCfg as Gnoise,
 )
 
 from isaaclab.envs import ManagerBasedEnv
@@ -135,7 +135,7 @@ class ElevationSceneCfg(InteractiveSceneCfg):
             pos=(0.0, 0.0, 20.0),
             # rot=(0.0, 1.0, 0.0, 0.0),
         ),
-        attach_yaw_only=True,
+        ray_alignment="yaw",
         pattern_cfg=patterns.GridPatternCfg(size=[2.5, 2.5], resolution=0.1),
         debug_vis=False,
         mesh_prim_paths=["/World/elevation/terrain"],
@@ -299,7 +299,7 @@ class ElevationRewardsCfg:
     )
     
     termination_penalty = RewTerm(
-        func = mdp.rewards.is_terminated_term,
+        func = mdp.is_terminated_term,
         params={"term_keys": "stuck"},
         weight = -200.0
     )

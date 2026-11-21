@@ -16,9 +16,12 @@ import gymnasium as gym
 import os
 
 from isaaclab.utils.dict import print_dict
-from isaaclab.utils.io import dump_yaml, dump_pickle
+import pickle
+from importlib import metadata
+
+from isaaclab.utils.io import dump_yaml
 from isaaclab_tasks.utils import get_checkpoint_path
-from isaaclab_rl.rsl_rl import RslRlVecEnvWrapper
+from isaaclab_rl.rsl_rl import RslRlVecEnvWrapper, handle_deprecated_rsl_rl_cfg
 
 from wheeledlab_rl.configs import RunConfig
 from wheeledlab_rl import WHEELEDLAB_RL_LOGS_DIR
@@ -61,7 +64,8 @@ def main(run_cfg: RunConfig): # TODO: Add SB3 config support
     # Save the config file
     if not log_cfg.no_log:
         dump_yaml(os.path.join(log_cfg.run_log_dir, "run_config.yaml"), run_cfg)
-        dump_pickle(os.path.join(log_cfg.run_log_dir, "run_config.pkl"), run_cfg)
+        with open(os.path.join(log_cfg.run_log_dir, "run_config.pkl"), "wb") as f:
+            pickle.dump(run_cfg, f)
 
     ############################
     #### CREATE ENVIRONMENT ####
@@ -92,6 +96,8 @@ def main(run_cfg: RunConfig): # TODO: Add SB3 config support
     # TODO: add back support for SB3
     env = RslRlVecEnvWrapper(env)
 
+    # rsl-rl >= 4 takes actor and critic model configs; the task's `policy` config is migrated
+    agent_cfg = handle_deprecated_rsl_rl_cfg(agent_cfg, metadata.version("rsl-rl-lib"))
     runner = ModifiedRslRunner(env, agent_cfg.to_dict(), log_cfg, device=train_cfg.device)
 
     ##### LOAD EXISTING RUN? #####

@@ -8,8 +8,8 @@ from isaaclab.managers import ObservationGroupCfg as ObsGroup
 from isaaclab.managers import ObservationTermCfg as ObsTerm
 from isaaclab.managers import SceneEntityCfg
 from isaaclab.utils.noise import (
-    AdditiveUniformNoiseCfg as Unoise,
-    AdditiveGaussianNoiseCfg as Gnoise,
+    UniformNoiseCfg as Unoise,
+    GaussianNoiseCfg as Gnoise,
 )
 
 from wheeledlab.envs.mdp import root_euler_xyz
