@@ -4,8 +4,14 @@ exit, and either the route's end or a safe stop behind the stopped lead (at rest
 time-out. A checkpoint passes at >= 95 % successes.
 
     python tools/evaluate.py --checkpoint <model_N.pt> [--conditions 256] [--seed 20261122]
+        [--samples-out <json>]
 
 Prints one JSON line: successes, the end reasons, and the episodes' end gap and lateral offset.
+
+`--samples-out` also writes the conditions the first reset drew, so another evaluator can run the
+same episodes rather than only the same distribution (scensim 094's cross-evaluation): a JSON
+object with the seed, the count, and `episodes`, a list in env order of {lead_speed, headway,
+decel, onset} (m/s, s, m/s^2, m), each episode's outcome beside it (`success`, `end_reason`).
 """
 import argparse
 import json
@@ -16,6 +22,8 @@ ap = argparse.ArgumentParser()
 ap.add_argument("--checkpoint", required=True)
 ap.add_argument("--conditions", type=int, default=256)
 ap.add_argument("--seed", type=int, default=20261122)
+ap.add_argument("--samples-out", default=None, metavar="JSON",
+                help="write the first reset's per-env conditions and outcomes to this file")
 AppLauncher.add_app_launcher_args(ap)
 args = ap.parse_args()
 app = AppLauncher(args).app
@@ -74,5 +82,12 @@ print(json.dumps({
     "end_abs_y_m": {"max": round(float(end_y.abs().max()), 2)},
     "conditions_sampled": {k: [round(min(v), 2), round(max(v), 2)] for k, v in cond.items()},
 }), flush=True)
+if args.samples_out:
+    with open(args.samples_out, "w") as f:
+        json.dump({"checkpoint": args.checkpoint, "seed": args.seed, "conditions": n,
+                   "keys": list(mdp.RANGES),
+                   "episodes": [dict({k: cond[k][i] for k in mdp.RANGES},
+                                     success=bool(ok[i]), end_reason=why[i]) for i in range(n)]},
+                  f, indent=1)
 env.close()
 app.close()
