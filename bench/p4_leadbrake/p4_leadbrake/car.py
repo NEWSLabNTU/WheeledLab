@@ -6,8 +6,8 @@ The numbers are copied from sim_vehicle_spec's generated articulation of the sam
 two sides of scensim roadmap 094 P4 drive one body (139's engine B builds from that file):
 
     sim_vehicle_spec generated/tesla_model3/articulation_carla-0.9.16.yaml
-    spec_hash    dffb1d3df1f4ae564235a87c84c1a5a4b402f4d41d265186976561b96d31273c
-    physics_hash 33635ad5c8611570ffbb9a00b495df5bdc1be06f8f6227280a4c34033acdc267
+    spec_hash    89cc738fd55929edd0e260121a80bfdde209563d8d7a97648505f557d9685f1e
+    physics_hash 47a1043b8cc7f790c2fc2245ae6ffdfe3d5fc4c6aa761cff0f3a30fdadaccf8f
 
 Nothing here imports scensim; `CONSTANTS` is the copy, and `test_car.py` holds it to the file
 when the file is at hand.
@@ -20,8 +20,8 @@ import os
 
 SOURCE = {
     "file": "sim_vehicle_spec generated/tesla_model3/articulation_carla-0.9.16.yaml",
-    "spec_hash": "dffb1d3df1f4ae564235a87c84c1a5a4b402f4d41d265186976561b96d31273c",
-    "physics_hash": "33635ad5c8611570ffbb9a00b495df5bdc1be06f8f6227280a4c34033acdc267",
+    "spec_hash": "89cc738fd55929edd0e260121a80bfdde209563d8d7a97648505f557d9685f1e",
+    "physics_hash": "47a1043b8cc7f790c2fc2245ae6ffdfe3d5fc4c6aa761cff0f3a30fdadaccf8f",
 }
 
 # link: (mass kg, com xyz, diagonal inertia, position xyz); the chassis's position is base_link

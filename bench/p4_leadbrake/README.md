@@ -16,7 +16,7 @@ finds it.
 - **Ego, the policy**: a Tesla Model 3 as an Isaac Lab articulation (`car.py`): a chassis box,
   four corners on prismatic suspension, both front wheels steered to Ackermann angles, rear-wheel
   drive by torque. Its numbers are copied from sim_vehicle_spec's
-  `generated/tesla_model3/articulation_carla-0.9.16.yaml` (physics_hash `33635ad5...`);
+  `generated/tesla_model3/articulation_carla-0.9.16.yaml` (physics_hash `47a1043b...`);
   `tests/test_car.py` holds them to the file when `P4_ARTICULATION_YAML` names it.
 - **Lead**: a kinematic box with the ego's footprint, cruising at `lead_speed`, braking at a
   constant `decel` to a stop when its rear passes `onset`, then holding.
