@@ -122,7 +122,8 @@ def test_a_bench_ends_its_run_at_its_clean_rows(tmp_path, monkeypatch):
     assert s["closed"] is True and s["clean_rows"]["verdict"] == "complete"
     assert s["clean_rows"]["clean"] == 2 and s["iterations"] == 3
     rows = (tmp_path / "r" / "iterations.csv").read_text().splitlines()
-    assert rows[0].endswith("outside_cpu,own_cpu,clean") and rows[1].endswith(",")  # warm-up: no flag
+    assert rows[0].endswith("outside_cpu,own_cpu,clean,row_sync_p90_ms")
+    assert rows[1].endswith(",,") and rows[2].endswith(",1,")  # warm-up: no flag; no probe
 
 
 SMI_XML = """<?xml version="1.0" ?><nvidia_smi_log>
@@ -150,3 +151,56 @@ def test_apps_reads_this_hosts_table():
     if shutil.which("nvidia-smi") is None:
         return
     assert all({"uuid", "pid", "type", "used_mib"} <= set(p) for p in gpu.apps())
+
+
+def test_clean_sync_needs_both_limits():
+    g = host.CleanRows(need=10, ceiling=20, limit=12.0, sync_limit=0.05)
+    assert g.add(5, 0.02) is True          # both within
+    assert g.add(20, 0.02) is False        # the host busy
+    assert g.add(5, 0.4) is False          # the GPU time-sliced
+    assert g.add(5, None) is False         # no probe: not clean
+    s = g.summary()
+    assert (s["clean"], s["measured"], s["over_cpu"], s["over_sync"]) == (1, 4, 1, 2)
+    assert s["sync_limit_ms"] == 0.05
+    # without a sync limit the summary and the verdicts are as before
+    assert "over_sync" not in host.CleanRows(3, 6, 12.0).summary()
+    assert host.CleanRows(3, 6, 12.0).add(5, 9.9) is True
+
+
+def test_a_bench_with_clean_sync_probes_every_measured_row(tmp_path, monkeypatch):
+    import json
+    from wheeledlab_bench import bench as bmod
+    probes = iter([0.01, 0.9, 0.02, 0.03])
+
+    class Exit(Exception):
+        pass
+
+    def fake_exit(code):
+        raise Exit
+    monkeypatch.setattr(bmod.os, "_exit", fake_exit)
+    b = bmod.Bench(str(tmp_path / "r"), "x", 4, warmup=1, mode="off", smi_every=0,
+                   clean_rows=3, max_rows=10, outside_limit=1e9, clean_sync=0.05)
+    b._torch = None
+    calls = []
+    monkeypatch.setattr(b, "row_sync_probe", lambda: calls.append(1) or next(probes))
+    try:
+        for _ in range(10):
+            b.begin()
+            b.steps = 1
+            b.end_iteration()
+    except Exit:
+        pass
+    s = json.loads((tmp_path / "r" / "summary.json").read_text())
+    assert len(calls) == 4                 # measured rows only: the warm-up row is not probed
+    assert s["clean_rows"]["verdict"] == "complete" and s["clean_rows"]["over_sync"] == 1
+    rows = (tmp_path / "r" / "iterations.csv").read_text().splitlines()
+    assert rows[0].endswith("clean,row_sync_p90_ms")
+    assert [r.split(",")[-2:] for r in rows[2:]] == [["1", "0.01"], ["0", "0.9"], ["1", "0.02"],
+                                                     ["1", "0.03"]]
+
+
+def test_clean_sync_needs_clean_rows(capsys):
+    import pytest
+    with pytest.raises(SystemExit) as e:
+        launch.main(["--out", "x", "--form", "y", "--clean-sync", "0.05", "--", "s.py"])
+    assert e.value.code == 2 and "--clean-sync needs --clean-rows" in capsys.readouterr().err

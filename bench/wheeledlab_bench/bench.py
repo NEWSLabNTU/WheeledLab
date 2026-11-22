@@ -22,7 +22,8 @@ class Bench:
     def __init__(self, out_dir: str, form: str, n_envs: int, seed=None, mode: str = "sync",
                  warmup: int = 20, smi_every: int = 10, settings: dict | None = None, gpu: int = 0,
                  provenance: dict | None = None, load_limit: float | None = None,
-                 clean_rows: int = 0, max_rows: int = 0, outside_limit: float | None = None):
+                 clean_rows: int = 0, max_rows: int = 0, outside_limit: float | None = None,
+                 clean_sync: float | None = None, sync_probe_n: int = 20):
         self.timer = StageTimer(mode)
         self.record = RunRecord(out_dir, form, n_envs, seed, dict(settings or {}, timers=mode),
                                 warmup=warmup, provenance=provenance)
@@ -48,9 +49,13 @@ class Bench:
         except OSError:                       # no /proc: no outside-CPU columns
             self.outside = None
         # the continuous gate: `clean_rows` clean measured rows, at most `max_rows` measured
-        self.gate = (CleanRows(clean_rows, max_rows or 4 * clean_rows, outside_limit)
+        self.gate = (CleanRows(clean_rows, max_rows or 4 * clean_rows, outside_limit,
+                               sync_limit=clean_sync)
                      if clean_rows and self.outside is not None and outside_limit is not None
                      else None)
+        # --clean-sync: a short kernel+sync probe on the run's GPU at every measured row, outside
+        # the row's time (it runs while the record is written)
+        self.clean_sync, self.sync_probe_n = clean_sync, sync_probe_n
 
     # -- explicit API -------------------------------------------------------------------------
     def stage(self, name: str):
@@ -108,7 +113,11 @@ class Bench:
         if self.outside is not None:
             load.update(self.outside.sample())
             if self.gate is not None and self.iteration >= self.record.warmup:
-                load["clean"] = int(self.gate.add(load["outside_cpu"]))
+                sync_ms = None
+                if self.clean_sync is not None:
+                    sync_ms = self.row_sync_probe()
+                    load["row_sync_p90_ms"] = "" if sync_ms is None else sync_ms
+                load["clean"] = int(self.gate.add(load["outside_cpu"], sync_ms))
         if self._torch is not None:
             peak = round(self._torch.cuda.max_memory_allocated() / 2**20)
         if self.smi_every and (self.iteration - self._last_smi >= self.smi_every or self.iteration == 0):
@@ -153,6 +162,16 @@ class Bench:
             extra = self.summary_extra() if self.summary_extra else {}
             self.record.close(iterations=self.iteration, closed=True, host_load=self.load.summary(),
                               **self._gate_summary(), **{**extra, **summary})
+
+    def row_sync_probe(self):
+        """This row's kernel+sync p90 (ms), or None when there is no GPU to probe."""
+        if self._torch is None:
+            return None
+        from . import gpu
+        try:
+            return gpu.sync_probe(self._torch.cuda.current_device(), n=self.sync_probe_n)["p90_ms"]
+        except Exception:
+            return None
 
     # -- helpers ------------------------------------------------------------------------------
     def _gate_summary(self) -> dict:

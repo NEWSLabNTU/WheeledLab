@@ -30,7 +30,9 @@ COLUMNS = (["form", "n_envs", "seed", "iteration", "phase", "steps", "samples", 
               "record_s", "load1", "gpu_util_pct", "other_procs", "other_mib", "sync_p50_ms",
               # the host's CPU outside the run's own process tree, and the tree's, in cores,
               # over the row; clean: within --clean-rows' limit (empty without the gate)
-              "outside_cpu", "own_cpu", "clean"])
+              "outside_cpu", "own_cpu", "clean",
+              # --clean-sync: this row's short kernel+sync probe, p90 ms (empty without it)
+              "row_sync_p90_ms"])
 
 PACKAGES = ("isaacsim", "isaaclab", "isaaclab_rl", "rsl-rl-lib", "torch", "warp-lang", "numpy",
             "gymnasium", "wheeledlab", "wheeledlab_tasks", "wheeledlab_rl", "wheeledlab-bench")

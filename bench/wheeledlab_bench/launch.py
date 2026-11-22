@@ -2,6 +2,7 @@
 
     python -m wheeledlab_bench.launch --out DIR --form NAME [--timers sync|nosync|off]
         [--warmup 20] [--seed S] [--gpu 0] [--require-idle [--max-load 0.5] [--wait-idle S]]
+        [--clean-rows N [--max-rows M] [--clean-sync MS]]
         [--sample-hook MOD:CLASS.METHOD ...] -- SCRIPT [ARGS...]
 
 The script runs as `__main__` with ARGS as its argv. `--require-idle` refuses to start while
@@ -22,6 +23,12 @@ continuous: a measured row whose outside CPU was above `--max-load` x cores is m
 `clean=0`, and the run ends once it has N clean rows (exit 0), or is refused after `--max-rows`
 measured rows (exit 7). Its summary's `clean_rows` gives the counts; a reader takes the clean
 rows only.
+
+With `--clean-sync MS` as well, every measured row also runs a short kernel+sync probe on the
+run's GPU (20 calls, while the row's record is written, outside its time) and is clean only
+when its outside CPU and the probe's p90 (`row_sync_p90_ms`) are both within their limits: an
+idle gap on a shared GPU, not only an idle host. The summary's `clean_rows` then adds
+`sync_limit_ms` and the unclean rows by cause (`over_cpu`, `over_sync`).
 """
 from __future__ import annotations
 
@@ -67,6 +74,10 @@ def main(argv=None) -> int:
                          "--max-rows measured rows. Give the script enough iterations")
     ap.add_argument("--max-rows", type=int, default=0, metavar="M",
                     help="with --clean-rows: the measured rows before refusing (default 4 N)")
+    ap.add_argument("--clean-sync", type=float, default=None, metavar="MS",
+                    help="with --clean-rows: also probe kernel+sync (20 calls) at every measured "
+                         "row; a row is clean only when its outside CPU and its probe's p90 are "
+                         "both within their limits (the probe is the row's row_sync_p90_ms)")
     ap.add_argument("--max-sync-ms", type=float, default=0.05,
                     help="refuse when a kernel+sync takes longer (p90: an other user busy in bursts "
                          "leaves p50 low); a free GPU takes ~0.01 ms")
@@ -82,6 +93,8 @@ def main(argv=None) -> int:
                     help="run although the harness or the task package has uncommitted changes "
                          "(recorded); by default such a run is refused")
     a = ap.parse_args(argv[:i])
+    if a.clean_sync is not None and not a.clean_rows:
+        ap.error("--clean-sync needs --clean-rows (it marks rows, the gate counts them)")
     script, rest = argv[i + 1], argv[i + 2:]
 
     from . import gpu
@@ -134,10 +147,12 @@ def main(argv=None) -> int:
                                 load_before=os.getloadavg(), host_load_gate=load,
                                 sync_probe_before=probe,
                                 idle_others_ok=a.idle_others_ok,
+                                clean_sync_ms=a.clean_sync,
                                 allow_shared=a.allow_shared), gpu=a.gpu,
                   provenance=prov, load_limit=load.get("limit"),
                   clean_rows=a.clean_rows, max_rows=a.max_rows,
-                  outside_limit=a.max_load * host.cores() if a.clean_rows else None)
+                  outside_limit=a.max_load * host.cores() if a.clean_rows else None,
+                  clean_sync=a.clean_sync if a.clean_rows else None)
     for spec in a.sample_hook:
         hooks.add_target(spec, "sample")
     hooks.install(bench)

@@ -104,14 +104,23 @@ class CleanRows:
     is marked unclean; the run ends once it has `need` clean rows, or is refused after
     `ceiling` measured rows. A load spike costs time, not the point."""
 
-    def __init__(self, need: int, ceiling: int, limit: float):
+    def __init__(self, need: int, ceiling: int, limit: float, sync_limit: float | None = None):
         self.need, self.ceiling, self.limit = need, ceiling, limit
+        self.sync_limit = sync_limit          # --clean-sync: the row's kernel+sync p90, ms
         self.clean = self.measured = 0
+        self.over_cpu = self.over_sync = 0
 
-    def add(self, outside: float) -> bool:
-        ok = outside <= self.limit
+    def add(self, outside: float, sync_ms: float | None = None) -> bool:
+        """One measured row: clean when its outside CPU is within the limit and, with a sync
+        limit, its kernel+sync probe too (a probe that did not run is not clean)."""
+        cpu_ok = outside <= self.limit
+        sync_ok = (self.sync_limit is None
+                   or (sync_ms is not None and sync_ms <= self.sync_limit))
+        ok = cpu_ok and sync_ok
         self.measured += 1
         self.clean += ok
+        self.over_cpu += not cpu_ok
+        self.over_sync += not sync_ok
         return ok
 
     def verdict(self):
@@ -123,8 +132,12 @@ class CleanRows:
         return None
 
     def summary(self) -> dict:
-        return {"need": self.need, "ceiling": self.ceiling, "limit_cores": self.limit,
-                "clean": self.clean, "measured": self.measured, "verdict": self.verdict()}
+        out = {"need": self.need, "ceiling": self.ceiling, "limit_cores": self.limit,
+               "clean": self.clean, "measured": self.measured, "verdict": self.verdict()}
+        if self.sync_limit is not None:
+            out.update(sync_limit_ms=self.sync_limit, over_cpu=self.over_cpu,
+                       over_sync=self.over_sync)
+        return out
 
 
 class LoadTrack:
