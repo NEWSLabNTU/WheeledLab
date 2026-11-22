@@ -31,11 +31,16 @@ finds it.
   m_speed = 1 - min(1, excess over 15 m/s / 15) and m_lane = 1 - min(1, |offset| / 1.75 m); no
   reward on a collision; and -1 on a terminal infraction (collision, lane exit). The last term
   is not CaRL's: its own cost of ending early, the progress given up, is nothing here, since the
-  lead always stops before the route's end. Without it the crash rate rose to 72 % (run 1).
+  lead always stops before the route's end. Run 1 (seed 1, 1024 envs, 300 iterations, pure
+  CaRL terms): the crash rate rose to 72 %. Run 2 (the same, with the term): no crashes from
+  iteration 75, and 256/256 safe stops at the first bar (0/256 at the 2 to 8 m bar: it stopped 14.0 to 15.4 m back).
 - **Terminations**: collision (gap <= 0), lane exit (|offset| > 3 m), the route's end (300 m),
   time-out (30 s).
-- **Success**: the route's end, or at time-out a safe stop behind the stopped lead (at rest, gap >=
-  2 m). The pass bar (`tools/evaluate.py`): >= 95 % of 256 conditions drawn with seed 20261122.
+- **Success**: the route's end, or at time-out a safe stop behind the stopped lead: at rest, a gap
+  of 2 to 8 m. The pass bar (`tools/evaluate.py`): >= 95 % of 256 conditions drawn with seed
+  20261122. The 8 m bound was set after the smoke runs, before the seed runs: run 2's policy
+  stopped 13.9 to 15.4 m back (min, median), which the first bar (a gap of at least 2 m) passed
+  256/256. A stop that far back is timid, so it fails now.
 - **PPO**: rsl_rl, [256, 128, 64] ELU actor and critic with observation normalisation, 24 steps per
   env, 5 epochs, 4 mini-batches, lr 1e-3 adaptive, gamma 0.99, lambda 0.95 (`agent.py`).
 
@@ -46,6 +51,8 @@ finds it.
   is the design load at every setting (PhysX's projected joint forces: 3860 and 4379 N per front
   and rear corner, 1680 kg x g in all). At rest q is 0.0047 to 0.0054 m at the default and 0.019
   to 0.022 m at 8 position iterations, where the file's sag puts it at 0. Run 2 trained at 8.
+- The brake is a different law from engine B's (Coulomb with stiction, the torque that stops the
+  wheel within a step, clipped to the brake torque).
 - A brake torque computed each step from the wheel's speed chatters (3000 N m swings the 1.37 kg m^2
   wheel 18 rad/s per 120 Hz step) and does not stop the car; the implicit damping does: 10.4 m/s
   to rest in 5.6 m (mu g).

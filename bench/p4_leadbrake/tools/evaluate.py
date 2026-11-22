@@ -1,6 +1,6 @@
 """The pass bar of scensim roadmap 094 P4: one episode in each of 256 conditions drawn with a
 fixed seed, judged by the task's own terms. An episode succeeds with no collision and no lane
-exit, and either the route's end or a safe stop behind the stopped lead (>= 2 m, at rest) at
+exit, and either the route's end or a safe stop behind the stopped lead (at rest, a gap of 2 to 8 m) at
 time-out. A checkpoint passes at >= 95 % successes.
 
     python tools/evaluate.py --checkpoint <model_N.pt> [--conditions 256] [--seed 20261122]

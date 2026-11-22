@@ -25,7 +25,7 @@ LANE_HALF = 1.75         # m: the lane is 3.5 m wide
 OFF_ROAD = 3.0           # m from the lane's centre
 SPEED_LIMIT = 15.0       # m/s, above the lead's highest
 BRAKE_DAMPING = 6000.0   # N m s/rad: the brake saturates within 0.5 rad/s of a stop
-SAFE_GAP = 2.0           # m: the safe stop behind a stopped lead
+SAFE_GAP = (2.0, 8.0)           # m: the safe stop behind a stopped lead
 # per reset (CS2's family, simplified: straight, dry, day)
 RANGES = {"lead_speed": (8.0, 14.0), "headway": (1.0, 3.0), "decel": (3.0, 7.0),
           "onset": (40.0, 120.0)}
@@ -286,10 +286,13 @@ def route_done(env):
 
 
 def safe_stop(env):
-    """Standing behind the stopped lead with at least SAFE_GAP: a success at time-out."""
+    """Standing behind the stopped lead, its gap within SAFE_GAP: a success at time-out. The
+    bar was set after the smoke runs: run 2's policy stopped 13.9-15.4 m back, which a bare
+    >= 2 m passed; a stop that far back is timid, not good, so it fails now."""
     v = T(env.scene["robot"].data.root_lin_vel_b)[:, 0]
     st = state(env)
-    return (st.lead_v <= 0.0) & (v.abs() < 0.1) & (gap(env) >= SAFE_GAP)
+    g = gap(env)
+    return (st.lead_v <= 0.0) & (v.abs() < 0.1) & (g >= SAFE_GAP[0]) & (g <= SAFE_GAP[1])
 
 
 def record_outcome(env):
