@@ -91,6 +91,8 @@ PHASES = [("settle", 0.0, 0.0, 0.5), ("straight", 2.0, 0.0, 2.0), ("turn", 2.0, 
 vmax, smax = 3.0, 0.488
 dt = env.step_dt
 assert abs(dt - 0.005) < 1e-9, dt
+steer_ids, steer_names = r.find_joints(["front_left_wheel_steer", "front_right_wheel_steer"],
+                                       preserve_order=True)
 trace, last, k = [], {}, 0
 brake = {}
 for name, v, d, dur in PHASES:
@@ -110,11 +112,15 @@ for name, v, d, dur in PHASES:
                 brake["time_to_stop_s"] = round((j + 1) * dt, 3)
         if k % 10 == 0:
             trace.append([round(k * dt, 3), round(x, 4), round(y, 4), round(vx, 4), round(wz, 4)])
-        last[name] = {"v": vx, "yaw_rate": wz, "x": x, "y": y}
+        last[name] = {"v": vx, "yaw_rate": wz, "x": x, "y": y,
+                      "steer": [float(q) for q in T(r.data.joint_pos)[0, steer_ids]],
+                      "steer_target": [float(q) for q in T(r.data.joint_pos_target)[0, steer_ids]]}
 brake["distance_m"] = round(math.hypot(last["brake"]["x"] - brake.pop("x0"),
                                        last["brake"]["y"] - brake.pop("y0")), 3)
 out = {"task": TASK, "body": "MUSHR_SUS_2WD_CFG", "dt": dt, "wheel_friction": args.wheel_friction,
-       "phases": {n: {"v": round(last[n]["v"], 3), "yaw_rate": round(last[n]["yaw_rate"], 3)}
+       "phases": {n: {"v": round(last[n]["v"], 3), "yaw_rate": round(last[n]["yaw_rate"], 3),
+                      "steer_target_lr": [round(q, 4) for q in last[n]["steer_target"]],
+                      "steer_readback_lr": [round(q, 4) for q in last[n]["steer"]]}
                   for n, *_ in PHASES[1:4]},
        "brake": brake}
 print("BODY " + json.dumps(out), flush=True)
