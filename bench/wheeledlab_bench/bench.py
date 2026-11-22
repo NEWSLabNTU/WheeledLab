@@ -21,7 +21,7 @@ from .timers import StageTimer
 class Bench:
     def __init__(self, out_dir: str, form: str, n_envs: int, seed=None, mode: str = "sync",
                  warmup: int = 20, smi_every: int = 10, settings: dict | None = None, gpu: int = 0,
-                 provenance: dict | None = None):
+                 provenance: dict | None = None, load_limit: float | None = None):
         self.timer = StageTimer(mode)
         self.record = RunRecord(out_dir, form, n_envs, seed, dict(settings or {}, timers=mode),
                                 warmup=warmup, provenance=provenance)
@@ -39,6 +39,8 @@ class Bench:
         self._last_smi = 0
         self.closed = False
         self.summary_extra = None             # a callable giving more summary fields (hooks)
+        from .host import LoadTrack
+        self.load = LoadTrack(load_limit, warmup)
 
     # -- explicit API -------------------------------------------------------------------------
     def stage(self, name: str):
@@ -90,7 +92,9 @@ class Bench:
         peak = smi = ""
         # the host's load, every row; the GPU's, with nvidia-smi's sample (the run's own
         # processes are not counted as others)
-        load = {"load1": f"{os.getloadavg()[0]:.2f}"}
+        load1 = os.getloadavg()[0]
+        load = {"load1": f"{load1:.2f}"}
+        self.load.add(self.iteration, load1)
         if self._torch is not None:
             peak = round(self._torch.cuda.max_memory_allocated() / 2**20)
         if self.smi_every and (self.iteration - self._last_smi >= self.smi_every or self.iteration == 0):
@@ -117,7 +121,7 @@ class Bench:
         self.iteration += 1
         self.steps = 0
         # the summary at every iteration: an app that exits hard (Kit's close) runs no atexit
-        self.record.summary(iterations=self.iteration, closed=False,
+        self.record.summary(iterations=self.iteration, closed=False, host_load=self.load.summary(),
                             **(self.summary_extra() if self.summary_extra else {}))
         self._sync()
         self._t0 = time.perf_counter()        # the record's own time is outside every row
@@ -126,7 +130,8 @@ class Bench:
         if not self.closed:
             self.closed = True
             extra = self.summary_extra() if self.summary_extra else {}
-            self.record.close(iterations=self.iteration, closed=True, **{**extra, **summary})
+            self.record.close(iterations=self.iteration, closed=True, host_load=self.load.summary(),
+                              **{**extra, **summary})
 
     # -- helpers ------------------------------------------------------------------------------
     def _sync(self) -> None:

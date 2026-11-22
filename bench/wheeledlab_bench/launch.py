@@ -1,7 +1,7 @@
 """Run a training script unchanged, with the harness hooked in.
 
     python -m wheeledlab_bench.launch --out DIR --form NAME [--timers sync|nosync|off]
-        [--warmup 20] [--seed S] [--gpu 0] [--require-idle]
+        [--warmup 20] [--seed S] [--gpu 0] [--require-idle [--max-load 0.5] [--wait-idle S]]
         [--sample-hook MOD:CLASS.METHOD ...] -- SCRIPT [ARGS...]
 
 The script runs as `__main__` with ARGS as its argv. `--require-idle` refuses to start while
@@ -10,6 +10,11 @@ another process holds GPU `--gpu`, unless `--idle-others-ok` and the GPU's utili
 loaded model server); the check's result goes into the run's settings either way, and the CSV
 records the other processes and the utilisation every few iterations, so one that wakes up
 during the run shows.
+
+An idle GPU is not an idle host: `--require-idle` also refuses (exit 6) while the host's 1-minute
+load is above `--max-load` x its cores (default 0.5), after waiting up to `--wait-idle` seconds
+for it to fall. Every row records the load, and the summary's `host_load` counts the measured
+rows above that limit, so a run the gate let start and the host then crowded shows it.
 """
 from __future__ import annotations
 
@@ -43,6 +48,11 @@ def main(argv=None) -> int:
     ap.add_argument("--idle-others-ok", action="store_true",
                     help="with --require-idle: accept other processes when the GPU's utilisation "
                          "stays at 0 %% over a 10 s watch")
+    ap.add_argument("--max-load", type=float, default=0.5, metavar="FRAC",
+                    help="with --require-idle: refuse while the host's 1-minute load is above FRAC x "
+                         "its cores (default 0.5)")
+    ap.add_argument("--wait-idle", type=float, default=0.0, metavar="S",
+                    help="with --require-idle: wait up to S seconds for the load to fall first")
     ap.add_argument("--max-sync-ms", type=float, default=0.05,
                     help="refuse when a kernel+sync takes longer (p90: an other user busy in bursts "
                          "leaves p50 low); a free GPU takes ~0.01 ms")
@@ -70,6 +80,18 @@ def main(argv=None) -> int:
     if a.require_idle and idle.get("procs") and (not a.idle_others_ok or max(idle["util_watch_pct"]) > 0):
         print(f"wheeledlab_bench: GPU {a.gpu} is not idle: {json.dumps(idle)}", file=sys.stderr)
         return 3
+    from . import host
+    if a.require_idle:
+        load = host.gate(a.max_load, a.wait_idle)
+        if not load["ok"]:
+            print(f"wheeledlab_bench: the host is busy: 1-minute load {load['load1']} > "
+                  f"{a.max_load} x {load['cores']} cores = {load['limit']} after waiting "
+                  f"{load['waited_s']:.0f} s; a measurement needs an idle host, not only an idle GPU "
+                  "(--wait-idle S waits longer)", file=sys.stderr)
+            return 6
+    else:
+        load = {"load1": round(host.load1(), 2), "cores": host.cores(), "limit": None,
+                "checked": False}
     try:
         # the GPU index as this process sees it (CUDA_VISIBLE_DEVICES renumbers)
         probe = gpu.sync_probe(0 if os.environ.get("CUDA_VISIBLE_DEVICES") else a.gpu)
@@ -95,10 +117,11 @@ def main(argv=None) -> int:
 
     bench = Bench(a.out, a.form, a.n_envs, seed=a.seed, mode=a.timers, warmup=a.warmup,
                   settings=dict(script=script, args=rest, gpu_before=idle,
-                                load_before=os.getloadavg(), sync_probe_before=probe,
+                                load_before=os.getloadavg(), host_load_gate=load,
+                                sync_probe_before=probe,
                                 idle_others_ok=a.idle_others_ok,
                                 allow_shared=a.allow_shared), gpu=a.gpu,
-                  provenance=prov)
+                  provenance=prov, load_limit=load.get("limit"))
     for spec in a.sample_hook:
         hooks.add_target(spec, "sample")
     hooks.install(bench)
