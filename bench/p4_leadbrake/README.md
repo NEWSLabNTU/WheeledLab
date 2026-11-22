@@ -63,3 +63,14 @@ finds it.
 - A brake torque computed each step from the wheel's speed chatters (3000 N m swings the 1.37 kg m^2
   wheel 18 rad/s per 120 Hz step) and does not stop the car; the implicit damping does: 10.4 m/s
   to rest in 5.6 m (mu g).
+- Training episodes start with the lead one step ahead of the record's headway. In Isaac Lab
+  3.0's `ManagerBasedRLEnv.step`, `_reset_idx` (here `reset_episode`, the lead at
+  `FRONT + h v`) runs before `command_manager.compute`. So `LeadCommand._update_command`
+  advances every env in the same step, the just-reset ones included. An episode reset in
+  training starts at a gap of `h v + v dt` (0.4 to 0.7 m more), a headway of h + 0.05 s
+  (+5 % at h = 1, +1.7 % at h = 3), and the onset test one step early. Only `env.reset()`'s
+  first episodes start at h. `tools/evaluate.py` scores exactly those, one per condition, so
+  the pass bar is judged at the record's h, and only the training distribution differs. Ours
+  starts every episode at h. This is kept as trained for P4 (found by scensim 139, 2026-11-22).
+  A rerun from scratch would place the lead at `FRONT + h v - v dt`, so the first update lands
+  at h.
