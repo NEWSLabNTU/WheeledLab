@@ -17,9 +17,33 @@ def gpus() -> list[dict]:
                  used_mib=int(r[5]), util_pct=int(r[6])) for r in rows]
 
 
+# a display server's own context on every GPU is not another run
+DISPLAY_SERVERS = ("Xorg", "Xwayland", "gnome-shell")
+
+
+def parse_processes(xml_text: str) -> list[dict]:
+    """Every process holding a context on any GPU, from `nvidia-smi -q -x`: compute, graphics
+    (G) or both (C+G), display servers left out."""
+    import xml.etree.ElementTree as ET
+    out = []
+    for g in ET.fromstring(xml_text).iter("gpu"):
+        uuid = g.findtext("uuid") or ""
+        for p in g.iter("process_info"):
+            name = (p.findtext("process_name") or "").rsplit("/", 1)[-1]
+            if name in DISPLAY_SERVERS:
+                continue
+            mem = (p.findtext("used_memory") or "").split()
+            out.append(dict(uuid=uuid, pid=int(p.findtext("pid") or 0), type=p.findtext("type") or "",
+                            name=name, used_mib=int(mem[0]) if mem and mem[0].isdigit() else 0))
+    return out
+
+
 def apps() -> list[dict]:
-    rows = _smi("--query-compute-apps=gpu_uuid,pid,used_memory")
-    return [dict(uuid=r[0], pid=int(r[1]), used_mib=int(r[2]) if r[2].isdigit() else 0) for r in rows]
+    """The processes on every GPU, graphics contexts included: --query-compute-apps lists no
+    graphics-only context, so a renderer on the wrong GPU would not show (094 P3, 2026-11-22)."""
+    xml_text = subprocess.run(["nvidia-smi", "-q", "-x"], capture_output=True, text=True,
+                              timeout=30, check=True).stdout
+    return parse_processes(xml_text)
 
 
 def own_used_mib(pid: int | None = None) -> int:

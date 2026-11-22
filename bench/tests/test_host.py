@@ -123,3 +123,30 @@ def test_a_bench_ends_its_run_at_its_clean_rows(tmp_path, monkeypatch):
     assert s["clean_rows"]["clean"] == 2 and s["iterations"] == 3
     rows = (tmp_path / "r" / "iterations.csv").read_text().splitlines()
     assert rows[0].endswith("outside_cpu,own_cpu,clean") and rows[1].endswith(",")  # warm-up: no flag
+
+
+SMI_XML = """<?xml version="1.0" ?><nvidia_smi_log>
+<gpu id="00000000:01:00.0"><uuid>GPU-a</uuid><processes>
+ <process_info><pid>1698</pid><type>G</type><process_name>/usr/lib/xorg/Xorg</process_name><used_memory>4 MiB</used_memory></process_info>
+ <process_info><pid>111</pid><type>C+G</type><process_name>/venv/bin/python</process_name><used_memory>2939 MiB</used_memory></process_info>
+ <process_info><pid>222</pid><type>G</type><process_name>kit</process_name><used_memory>310 MiB</used_memory></process_info>
+</processes></gpu>
+<gpu id="00000000:02:00.0"><uuid>GPU-b</uuid><processes>
+ <process_info><pid>333</pid><type>C</type><process_name>python</process_name><used_memory>10258 MiB</used_memory></process_info>
+</processes></gpu></nvidia_smi_log>"""
+
+
+def test_apps_include_graphics_only_contexts_and_leave_out_xorg():
+    from wheeledlab_bench import gpu
+    ps = gpu.parse_processes(SMI_XML)
+    assert [(p["uuid"], p["pid"], p["type"]) for p in ps] == [
+        ("GPU-a", 111, "C+G"), ("GPU-a", 222, "G"), ("GPU-b", 333, "C")]
+    assert ps[1]["used_mib"] == 310
+
+
+def test_apps_reads_this_hosts_table():
+    from wheeledlab_bench import gpu
+    import shutil
+    if shutil.which("nvidia-smi") is None:
+        return
+    assert all({"uuid", "pid", "type", "used_mib"} <= set(p) for p in gpu.apps())
