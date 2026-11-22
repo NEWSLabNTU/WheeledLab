@@ -285,6 +285,14 @@ def route_done(env):
     return s >= ROUTE
 
 
+def safe_stop_reward(env):
+    """1 in the step an episode times out standing in the bar's window (`safe_stop`), else 0:
+    the return then rewards what the pass bar measures. Rewards are computed after the step's
+    terminations, so the time-out is known here."""
+    out = env.termination_manager.get_term("time_out") & safe_stop(env)
+    return out.float()
+
+
 def safe_stop(env):
     """Standing behind the stopped lead, its gap within SAFE_GAP: a success at time-out. The
     bar was set after the smoke runs: run 2's policy stopped 13.9-15.4 m back, which a bare

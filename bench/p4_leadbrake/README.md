@@ -34,6 +34,13 @@ finds it.
   lead always stops before the route's end. Run 1 (seed 1, 1024 envs, 300 iterations, pure
   CaRL terms): the crash rate rose to 72 %. Run 2 (the same, with the term): no crashes from
   iteration 75, and 256/256 safe stops at the first bar (0/256 at the 2 to 8 m bar: it stopped 14.0 to 15.4 m back).
+  And +1 at time-out for a stop in the bar's window (at rest, a gap of 2 to 8 m behind the
+  stopped lead), not CaRL's either: progress alone tells a 3 m stop from a 15 m one by 0.04 of
+  the return, too little for PPO to settle in the window. Seed 1 at the 2 to 8 m bar without
+  it (1024 envs, 1500 iterations): no pass, 0.77 at best (iteration 1300), 0.00 at the end, its
+  checkpoints swinging between stops 10 to 21 m back and crashes. Isaac Lab multiplies every
+  term by the step's dt, so the weights are relative: a whole route's progress, the -1 and the
+  +1 are each worth the same.
 - **Terminations**: collision (gap <= 0), lane exit (|offset| > 3 m), the route's end (300 m),
   time-out (30 s).
 - **Success**: the route's end, or at time-out a safe stop behind the stopped lead: at rest, a gap

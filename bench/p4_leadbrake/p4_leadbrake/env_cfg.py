@@ -84,6 +84,10 @@ class RewardsCfg:
     # crash rate rose to 72 % without it)
     infraction = RewTerm(func=base.is_terminated_term, weight=-1.0,
                          params={"term_keys": ["collided", "off_road"]})
+    # a stop in the bar's window at time-out earns a route's worth: progress alone told a 3 m
+    # stop from a 15 m one by 0.04, too little for PPO to settle in the window (seed 1 at the
+    # 2 to 8 m bar: no pass by 1500 iterations, 0.77 at best, 0.00 at the end)
+    safe_stop = RewTerm(func=mdp.safe_stop_reward, weight=1.0)
 
 
 @configclass
