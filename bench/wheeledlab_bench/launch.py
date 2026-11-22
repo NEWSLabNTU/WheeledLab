@@ -51,6 +51,12 @@ def main(argv=None) -> int:
     ap.add_argument("--sample-hook", action="append", default=[], metavar="MOD:CLASS.METHOD",
                     help="time the `sample` stage around this method (repeatable): a side that "
                          "draws its episode starts on the host, e.g. a pool's refill and draw")
+    ap.add_argument("--task-package", default=None, metavar="NAME",
+                    help="the task's top-level package (wheeledlab_tasks, p4_leadbrake, "
+                         "scensim_batch): its commit and dirty flag go into meta.json")
+    ap.add_argument("--allow-dirty", action="store_true",
+                    help="run although the harness or the task package has uncommitted changes "
+                         "(recorded); by default such a run is refused")
     a = ap.parse_args(argv[:i])
     script, rest = argv[i + 1], argv[i + 2:]
 
@@ -75,11 +81,24 @@ def main(argv=None) -> int:
               "needs an exclusive GPU (--allow-shared runs anyway, as a smoke)", file=sys.stderr)
         return 4
 
+    from . import provenance
+    prov = {"harness": provenance.harness()}
+    if a.task_package:
+        prov["task"] = provenance.of_package(a.task_package)
+    unclean = provenance.dirty(prov)
+    if unclean and not a.allow_dirty:
+        print("wheeledlab_bench: uncommitted changes in " + "; ".join(
+              f"{k} ({prov[k]['path']}: {', '.join(prov[k].get('dirty_files', []))})"
+              for k in unclean) + "; commit them, or --allow-dirty (recorded)", file=sys.stderr)
+        return 5
+    prov["allow_dirty"] = a.allow_dirty
+
     bench = Bench(a.out, a.form, a.n_envs, seed=a.seed, mode=a.timers, warmup=a.warmup,
                   settings=dict(script=script, args=rest, gpu_before=idle,
                                 load_before=os.getloadavg(), sync_probe_before=probe,
                                 idle_others_ok=a.idle_others_ok,
-                                allow_shared=a.allow_shared), gpu=a.gpu)
+                                allow_shared=a.allow_shared), gpu=a.gpu,
+                  provenance=prov)
     for spec in a.sample_hook:
         hooks.add_target(spec, "sample")
     hooks.install(bench)

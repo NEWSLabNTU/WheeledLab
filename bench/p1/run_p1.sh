@@ -48,7 +48,7 @@ run() {
     echo "$name: cameras=$cam timers=$timers seed=$seed envs=$n iterations=$iters ($(date -Is))"
     WHEELEDLAB_ENABLE_CAMERAS=$cam env -u DISPLAY "$OV" -m wheeledlab_bench.launch \
         --out "$d" --form "ported-cam$cam" --timers "$timers" --warmup "$warmup" --seed "$seed" \
-        --gpu "$GPU" "${gate[@]}" -- "${TRAIN[@]}" agent.seed="$seed" \
+        --gpu "$GPU" --task-package wheeledlab_tasks "${gate[@]}" -- "${TRAIN[@]}" agent.seed="$seed" \
         train.num_iterations="$iters" env_setup.num_envs="$n" \
         train.log.run_name="p1-$tag-$stage-$name" > "$d.log" 2>&1
 }

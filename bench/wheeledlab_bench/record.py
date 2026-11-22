@@ -45,7 +45,7 @@ def releases() -> dict:
 
 class RunRecord:
     def __init__(self, out_dir: str, form: str, n_envs: int, seed, settings: dict,
-                 warmup: int = 20):
+                 warmup: int = 20, provenance: dict | None = None):
         os.makedirs(out_dir, exist_ok=True)
         self.out_dir, self.form, self.n_envs, self.seed, self.warmup = out_dir, form, n_envs, seed, warmup
         self.path = os.path.join(out_dir, "iterations.csv")
@@ -53,6 +53,7 @@ class RunRecord:
         self._w = csv.DictWriter(self._f, fieldnames=COLUMNS)
         self._w.writeheader()
         self.settings = settings
+        self.provenance = provenance  # harness and task commits (provenance.py)
         self.started = time.strftime("%Y-%m-%dT%H:%M:%S%z")
         self._meta_written = False
 
@@ -66,7 +67,8 @@ class RunRecord:
             g = [{"error": str(e)}]
         meta = dict(host=socket.gethostname(), platform=platform.platform(), gpus=g,
                     releases=releases(), form=self.form, n_envs=self.n_envs, seed=self.seed,
-                    warmup=self.warmup, settings=self.settings, started=self.started,
+                    warmup=self.warmup, settings=self.settings, provenance=self.provenance,
+                    started=self.started,
                     pid=os.getpid(), schema=list(COLUMNS))
         with open(os.path.join(self.out_dir, "meta.json"), "w") as f:
             json.dump(meta, f, indent=1, default=str)

@@ -39,7 +39,8 @@ run() {
     mkdir -p "$d"
     echo "$name: timers=$timers seed=$seed envs=$n iterations=$iters ($(date -Is))"
     (cd "$d" && env -u DISPLAY "$OV" -m wheeledlab_bench.launch --out "$d" --form stock \
-        --timers "$timers" --warmup "$warmup" --seed "$seed" --gpu "$GPU" "${gate[@]}" -- \
+        --timers "$timers" --warmup "$warmup" --seed "$seed" --gpu "$GPU" \
+        --task-package p4_leadbrake "${gate[@]}" -- \
         "$ISAACLAB/scripts/reinforcement_learning/train.py" --rl_library rsl_rl \
         --task P4-LeadBrake-v0 --num_envs "$n" --max_iterations "$iters" --seed "$seed" \
         > "$d.log" 2>&1)

@@ -20,10 +20,11 @@ from .timers import StageTimer
 
 class Bench:
     def __init__(self, out_dir: str, form: str, n_envs: int, seed=None, mode: str = "sync",
-                 warmup: int = 20, smi_every: int = 10, settings: dict | None = None, gpu: int = 0):
+                 warmup: int = 20, smi_every: int = 10, settings: dict | None = None, gpu: int = 0,
+                 provenance: dict | None = None):
         self.timer = StageTimer(mode)
         self.record = RunRecord(out_dir, form, n_envs, seed, dict(settings or {}, timers=mode),
-                                warmup=warmup)
+                                warmup=warmup, provenance=provenance)
         self.n_envs, self.smi_every, self.gpu = n_envs, smi_every, gpu
         self.iteration, self.steps = 0, 0
         self._t0 = None                        # this iteration's start
