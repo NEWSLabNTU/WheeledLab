@@ -1,7 +1,8 @@
 """Run a training script unchanged, with the harness hooked in.
 
     python -m wheeledlab_bench.launch --out DIR --form NAME [--timers sync|nosync|off]
-        [--warmup 20] [--seed S] [--gpu 0] [--require-idle] -- SCRIPT [ARGS...]
+        [--warmup 20] [--seed S] [--gpu 0] [--require-idle]
+        [--sample-hook MOD:CLASS.METHOD ...] -- SCRIPT [ARGS...]
 
 The script runs as `__main__` with ARGS as its argv. `--require-idle` refuses to start while
 another process holds GPU `--gpu`, unless `--idle-others-ok` and the GPU's utilisation stays at
@@ -47,6 +48,9 @@ def main(argv=None) -> int:
                          "leaves p50 low); a free GPU takes ~0.01 ms")
     ap.add_argument("--allow-shared", action="store_true",
                     help="run anyway on a shared GPU (a smoke, not a measurement); the probe is recorded")
+    ap.add_argument("--sample-hook", action="append", default=[], metavar="MOD:CLASS.METHOD",
+                    help="time the `sample` stage around this method (repeatable): a side that "
+                         "draws its episode starts on the host, e.g. a pool's refill and draw")
     a = ap.parse_args(argv[:i])
     script, rest = argv[i + 1], argv[i + 2:]
 
@@ -76,6 +80,8 @@ def main(argv=None) -> int:
                                 load_before=os.getloadavg(), sync_probe_before=probe,
                                 idle_others_ok=a.idle_others_ok,
                                 allow_shared=a.allow_shared), gpu=a.gpu)
+    for spec in a.sample_hook:
+        hooks.add_target(spec, "sample")
     hooks.install(bench)
     bench.summary_extra = lambda: dict(patched=dict(hooks.patched), unpatched=hooks.unpatched(),
                                         calls=dict(hooks.calls))

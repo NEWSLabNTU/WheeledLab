@@ -17,8 +17,11 @@ from importlib import metadata
 # the stages, in the order they run; `env_step` holds the env's own stages, `rollout` holds
 # env_step, `inference` and `storage`
 STAGES = ("rollout", "inference", "env_step", "actions", "physics", "render", "scene",
-          "terminations", "rewards", "resets", "commands", "events", "observations",
+          "terminations", "rewards", "resets", "sample", "commands", "events", "observations",
           "storage", "returns", "update")
+# `sample` is the host's time drawing episode starts, counted on whichever thread runs it (a
+# background refill too, though it hides behind the rollout); a side that draws on the device
+# inside its resets records 0 (scensim 133, 2026-11-22), not empty
 
 COLUMNS = (["form", "n_envs", "seed", "iteration", "phase", "steps", "samples", "wall_s",
             "samples_per_s", "env_steps_per_s"]

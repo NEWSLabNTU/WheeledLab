@@ -7,6 +7,7 @@ the harness's overhead.
 """
 from __future__ import annotations
 
+import threading
 import time
 from collections import defaultdict
 from contextlib import contextmanager
@@ -31,6 +32,7 @@ class StageTimer:
         self.total = defaultdict(float)       # stage -> inclusive seconds, this iteration
         self.own = defaultdict(float)         # stage -> exclusive seconds (children taken out)
         self.calls = defaultdict(int)
+        self._lock = threading.Lock()         # add() comes from other threads
 
     @property
     def enabled(self) -> bool:
@@ -61,6 +63,16 @@ class StageTimer:
         self.own[stage] += dt - children
         self.calls[stage] += 1
 
+    def add(self, stage: str, dt: float) -> None:
+        """Time spent in `stage` on another thread (a background refill): counted in full, in
+        both columns (it has no children), never on the nesting stack, never synchronised."""
+        if not self.enabled:
+            return
+        with self._lock:
+            self.total[stage] += dt
+            self.own[stage] += dt
+            self.calls[stage] += 1
+
     @contextmanager
     def stage(self, name: str):
         self.start(name)
@@ -71,6 +83,7 @@ class StageTimer:
 
     def take(self) -> tuple[dict, dict, dict]:
         """This iteration's (inclusive, exclusive, calls) per stage, and start the next."""
-        out = dict(self.total), dict(self.own), dict(self.calls)
-        self.total.clear(), self.own.clear(), self.calls.clear()
+        with self._lock:
+            out = dict(self.total), dict(self.own), dict(self.calls)
+            self.total.clear(), self.own.clear(), self.calls.clear()
         return out

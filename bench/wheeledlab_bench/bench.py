@@ -82,6 +82,8 @@ class Bench:
         t_rec = time.perf_counter()
         total, own, _calls = self.timer.take()
         if self.timer.enabled:
+            total.setdefault("sample", 0.0)
+            own.setdefault("sample", 0.0)
             inner = total.get("returns", 0.0) + total.get("update", 0.0)
             total["rollout"] = own["rollout"] = wall - inner
         peak = smi = ""

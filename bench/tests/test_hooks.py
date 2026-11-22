@@ -131,3 +131,80 @@ def test_two_envs_of_one_class_are_patched_once(bench):
     cls().step(0.0)
     _, _, calls = bench.timer.take()
     assert calls["actions"] == 3
+
+
+# ---- the sample stage (a side that draws its episode starts on the host) ---------------------
+
+def pool_module():
+    mod = types.ModuleType("scensim_batch.fake_pool")
+
+    class StartPool:
+        def refill(self):
+            return "filled"
+
+        def draw(self, n):
+            return list(range(n))
+
+    StartPool.__module__ = mod.__name__
+    mod.StartPool = StartPool
+    return mod
+
+
+@pytest.fixture
+def sample_targets(monkeypatch):
+    monkeypatch.setattr(hooks, "TARGETS", {k: dict(v) for k, v in hooks.TARGETS.items()})
+    monkeypatch.setattr(hooks, "MODULES", {})
+    monkeypatch.setattr(hooks, "PREFIXES", hooks.PREFIXES)
+
+
+def test_sample_hook_times_draw_inside_a_reset(bench, sample_targets):
+    hooks.add_target("scensim_batch.fake_pool:StartPool.draw", "sample")
+    hooks.add_target("scensim_batch.fake_pool:StartPool.refill", "sample")
+    assert "scensim_batch" in hooks.PREFIXES
+    mod = pool_module()
+    hooks._patch_module(mod)
+    pool = mod.StartPool()
+    bench.timer.start("resets")
+    assert pool.draw(3) == [0, 1, 2]
+    bench.timer.stop("resets")
+    total, own, calls = bench.timer.take()
+    assert calls["sample"] == 1 and total["sample"] <= total["resets"]
+    assert own["resets"] == pytest.approx(total["resets"] - total["sample"])
+    assert hooks.calls == {"StartPool.draw": 1}
+    assert not {"StartPool.draw", "StartPool.refill"} & set(hooks.unpatched())
+
+
+def test_sample_on_a_background_thread_is_counted_off_the_stack(bench, sample_targets):
+    import threading
+    hooks.add_target("scensim_batch.fake_pool:StartPool.refill", "sample")
+    mod = pool_module()
+    hooks._patch_module(mod)
+    pool = mod.StartPool()
+    bench.timer.start("env_step")
+    th = threading.Thread(target=pool.refill)
+    th.start()
+    th.join()
+    bench.timer.stop("env_step")         # the stack is untouched by the thread
+    total, own, calls = bench.timer.take()
+    assert calls["sample"] == 1 and total["sample"] == own["sample"] > 0
+    assert own["env_step"] == pytest.approx(total["env_step"])   # not charged as a child
+
+
+def test_a_named_target_in_another_module_is_left_alone(bench, sample_targets):
+    hooks.add_target("scensim_batch.pool:StartPool.refill", "sample")
+    mod = pool_module()                    # scensim_batch.fake_pool, not .pool
+    hooks._patch_module(mod)
+    assert "StartPool.refill" not in hooks.patched
+    assert "StartPool.refill" in hooks.unpatched()
+
+
+def test_stock_rows_carry_sample_zero(tmp_path):
+    import csv
+    from wheeledlab_bench import Bench
+    b = Bench(str(tmp_path), "stock", 4, mode="nosync", smi_every=0)
+    b.timer.start("env_step")
+    b.timer.stop("env_step")
+    b.end_iteration()
+    b.close()
+    row = next(csv.DictReader(open(tmp_path / "iterations.csv")))
+    assert row["sample_s"] == "0.000000" and row["sample_own_s"] == "0.000000"

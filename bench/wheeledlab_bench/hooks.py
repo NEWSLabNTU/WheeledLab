@@ -16,6 +16,8 @@ from __future__ import annotations
 
 import functools
 import importlib.abc
+import threading
+import time
 import importlib.machinery
 import sys
 
@@ -42,6 +44,8 @@ ENV_STEPS = ("ManagerBasedRLEnv", "DirectRLEnv")
 DIRECT_STAGES = {"_pre_physics_step": "actions", "_apply_action": "actions",
                  "_get_observations": "observations", "_get_rewards": "rewards",
                  "_get_dones": "terminations", "_reset_idx": "resets"}
+
+MODULES: dict[str, str] = {}      # a named target's class -> the only module it is taken from
 
 _bench = None
 patched: dict[str, str] = {}       # "Class.method" -> module
@@ -111,10 +115,32 @@ def _env_step(fn, stage, bench, key):
     return step
 
 
+def add_target(spec: str, stage: str) -> None:
+    """Time `stage` around a method named as "module.path:Class.method" (scensim_batch's pool
+    refill and draw are the `sample` stage). Its module's top package joins the hooked prefixes;
+    a named target that is never found is in `unpatched`, as the built-in ones are."""
+    global PREFIXES
+    mod, _, qual = spec.partition(":")
+    cname, _, method = qual.partition(".")
+    if not (mod and cname and method):
+        raise ValueError(f"hook {spec!r}: module.path:Class.method")
+    top = mod.split(".")[0]
+    if not mod.startswith(PREFIXES):
+        PREFIXES = PREFIXES + (top,)
+    TARGETS.setdefault(cname, {})[method] = stage
+    MODULES[cname] = mod
+
+
 def _timed(fn, stage, bench, key):
     @functools.wraps(fn)
     def timed(self, *a, **k):
         calls[key] = calls.get(key, 0) + 1
+        if threading.current_thread() is not threading.main_thread():
+            t0 = time.perf_counter()          # off the nesting stack, never synchronised
+            try:
+                return fn(self, *a, **k)
+            finally:
+                bench.timer.add(stage, time.perf_counter() - t0)
         bench.timer.start(stage)
         try:
             return fn(self, *a, **k)
@@ -145,6 +171,8 @@ def _patch_module(mod) -> None:
     for cname, methods in TARGETS.items():
         cls = mod.__dict__.get(cname)
         if not isinstance(cls, type) or cls.__module__ != mod.__name__:
+            continue
+        if cname in MODULES and mod.__name__ != MODULES[cname]:
             continue
         for method, stage in methods.items():
             key = f"{cname}.{method}"
