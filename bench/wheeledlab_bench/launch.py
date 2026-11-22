@@ -15,6 +15,13 @@ An idle GPU is not an idle host: `--require-idle` also refuses (exit 6) while th
 load is above `--max-load` x its cores (default 0.5), after waiting up to `--wait-idle` seconds
 for it to fall. Every row records the load, and the summary's `host_load` counts the measured
 rows above that limit, so a run the gate let start and the host then crowded shows it.
+
+Every row also records the CPU in use outside the run's own process tree (`outside_cpu`, in
+cores, over the row) and the tree's own (`own_cpu`). With `--clean-rows N` the gate is
+continuous: a measured row whose outside CPU was above `--max-load` x cores is marked
+`clean=0`, and the run ends once it has N clean rows (exit 0), or is refused after `--max-rows`
+measured rows (exit 7). Its summary's `clean_rows` gives the counts; a reader takes the clean
+rows only.
 """
 from __future__ import annotations
 
@@ -53,6 +60,13 @@ def main(argv=None) -> int:
                          "its cores (default 0.5)")
     ap.add_argument("--wait-idle", type=float, default=0.0, metavar="S",
                     help="with --require-idle: wait up to S seconds for the load to fall first")
+    ap.add_argument("--clean-rows", type=int, default=0, metavar="N",
+                    help="the continuous gate: a measured row while the CPU outside the run's own "
+                         "process tree is over --max-load x cores is marked unclean; the run ends "
+                         "(exit 0) once it has N clean rows, or is refused (exit 7) after "
+                         "--max-rows measured rows. Give the script enough iterations")
+    ap.add_argument("--max-rows", type=int, default=0, metavar="M",
+                    help="with --clean-rows: the measured rows before refusing (default 4 N)")
     ap.add_argument("--max-sync-ms", type=float, default=0.05,
                     help="refuse when a kernel+sync takes longer (p90: an other user busy in bursts "
                          "leaves p50 low); a free GPU takes ~0.01 ms")
@@ -121,7 +135,9 @@ def main(argv=None) -> int:
                                 sync_probe_before=probe,
                                 idle_others_ok=a.idle_others_ok,
                                 allow_shared=a.allow_shared), gpu=a.gpu,
-                  provenance=prov, load_limit=load.get("limit"))
+                  provenance=prov, load_limit=load.get("limit"),
+                  clean_rows=a.clean_rows, max_rows=a.max_rows,
+                  outside_limit=a.max_load * host.cores() if a.clean_rows else None)
     for spec in a.sample_hook:
         hooks.add_target(spec, "sample")
     hooks.install(bench)

@@ -21,7 +21,8 @@ from .timers import StageTimer
 class Bench:
     def __init__(self, out_dir: str, form: str, n_envs: int, seed=None, mode: str = "sync",
                  warmup: int = 20, smi_every: int = 10, settings: dict | None = None, gpu: int = 0,
-                 provenance: dict | None = None, load_limit: float | None = None):
+                 provenance: dict | None = None, load_limit: float | None = None,
+                 clean_rows: int = 0, max_rows: int = 0, outside_limit: float | None = None):
         self.timer = StageTimer(mode)
         self.record = RunRecord(out_dir, form, n_envs, seed, dict(settings or {}, timers=mode),
                                 warmup=warmup, provenance=provenance)
@@ -41,6 +42,15 @@ class Bench:
         self.summary_extra = None             # a callable giving more summary fields (hooks)
         from .host import LoadTrack
         self.load = LoadTrack(load_limit, warmup)
+        from .host import CleanRows, OutsideCpu
+        try:
+            self.outside = OutsideCpu()
+        except OSError:                       # no /proc: no outside-CPU columns
+            self.outside = None
+        # the continuous gate: `clean_rows` clean measured rows, at most `max_rows` measured
+        self.gate = (CleanRows(clean_rows, max_rows or 4 * clean_rows, outside_limit)
+                     if clean_rows and self.outside is not None and outside_limit is not None
+                     else None)
 
     # -- explicit API -------------------------------------------------------------------------
     def stage(self, name: str):
@@ -95,6 +105,10 @@ class Bench:
         load1 = os.getloadavg()[0]
         load = {"load1": f"{load1:.2f}"}
         self.load.add(self.iteration, load1)
+        if self.outside is not None:
+            load.update(self.outside.sample())
+            if self.gate is not None and self.iteration >= self.record.warmup:
+                load["clean"] = int(self.gate.add(load["outside_cpu"]))
         if self._torch is not None:
             peak = round(self._torch.cuda.max_memory_allocated() / 2**20)
         if self.smi_every and (self.iteration - self._last_smi >= self.smi_every or self.iteration == 0):
@@ -122,7 +136,14 @@ class Bench:
         self.steps = 0
         # the summary at every iteration: an app that exits hard (Kit's close) runs no atexit
         self.record.summary(iterations=self.iteration, closed=False, host_load=self.load.summary(),
+                            **self._gate_summary(),
                             **(self.summary_extra() if self.summary_extra else {}))
+        verdict = self.gate.verdict() if self.gate is not None else None
+        if verdict is not None:
+            # the run has its clean rows (or never will): end it here, its record closed; a
+            # hard exit, since the training loop and Kit's close would run on
+            self.close(stopped_by="clean_rows", exit_code=0 if verdict == "complete" else 7)
+            os._exit(0 if verdict == "complete" else 7)
         self._sync()
         self._t0 = time.perf_counter()        # the record's own time is outside every row
 
@@ -131,9 +152,12 @@ class Bench:
             self.closed = True
             extra = self.summary_extra() if self.summary_extra else {}
             self.record.close(iterations=self.iteration, closed=True, host_load=self.load.summary(),
-                              **{**extra, **summary})
+                              **self._gate_summary(), **{**extra, **summary})
 
     # -- helpers ------------------------------------------------------------------------------
+    def _gate_summary(self) -> dict:
+        return {"clean_rows": self.gate.summary()} if self.gate is not None else {}
+
     def _sync(self) -> None:
         if self._torch is not None:
             self._torch.cuda.synchronize()

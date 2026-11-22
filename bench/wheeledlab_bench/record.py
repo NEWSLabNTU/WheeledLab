@@ -27,7 +27,10 @@ COLUMNS = (["form", "n_envs", "seed", "iteration", "phase", "steps", "samples", 
             "samples_per_s", "env_steps_per_s"]
            + [f"{s}_s" for s in STAGES] + [f"{s}_own_s" for s in STAGES]
            + ["torch_peak_mib", "smi_used_mib", "episodes", "ep_return_mean", "ep_len_mean",
-              "record_s", "load1", "gpu_util_pct", "other_procs", "other_mib", "sync_p50_ms"])
+              "record_s", "load1", "gpu_util_pct", "other_procs", "other_mib", "sync_p50_ms",
+              # the host's CPU outside the run's own process tree, and the tree's, in cores,
+              # over the row; clean: within --clean-rows' limit (empty without the gate)
+              "outside_cpu", "own_cpu", "clean"])
 
 PACKAGES = ("isaacsim", "isaaclab", "isaaclab_rl", "rsl-rl-lib", "torch", "warp-lang", "numpy",
             "gymnasium", "wheeledlab", "wheeledlab_tasks", "wheeledlab_rl", "wheeledlab-bench")

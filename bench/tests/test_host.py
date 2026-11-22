@@ -45,3 +45,81 @@ def test_launch_refuses_a_busy_host_with_exit_6(monkeypatch, tmp_path, capsys):
     assert rc == 6
     assert "the host is busy: 1-minute load 30.0 > 0.5 x 24 cores = 12.0" in capsys.readouterr().err
     assert not (tmp_path / "r").exists()
+
+
+def test_outside_cpu_leaves_the_run_out():
+    """A busy loop in this process is own CPU, not outside: own_cpu x the interval is the CPU
+    time the loop took (compared with the process's own count, so a loaded host does not
+    matter)."""
+    import time
+    o = host.OutsideCpu()
+    w0, c0 = time.perf_counter(), time.process_time()
+    while time.process_time() - c0 < 0.5:
+        pass
+    s = o.sample()
+    wall, cpu = time.perf_counter() - w0, time.process_time() - c0
+    assert abs(s["own_cpu"] * wall - cpu) < 0.15
+    assert s["outside_cpu"] >= 0.0
+
+
+def test_the_tree_counts_children():
+    """A child's CPU time is the run's own, also after it exited and was waited for."""
+    import resource
+    import subprocess
+    import time
+    o = host.OutsideCpu()
+    w0 = time.perf_counter()
+    r0 = resource.getrusage(resource.RUSAGE_CHILDREN)
+    subprocess.run([sys.executable, "-c",
+                    "import time\nc=time.process_time()\nwhile time.process_time()-c<0.5: pass"])
+    r1 = resource.getrusage(resource.RUSAGE_CHILDREN)
+    s = o.sample()
+    wall = time.perf_counter() - w0
+    child = (r1.ru_utime + r1.ru_stime) - (r0.ru_utime + r0.ru_stime)
+    assert child >= 0.45
+    assert s["own_cpu"] * wall >= child - 0.15
+
+
+def test_clean_rows_end_complete_or_refused():
+    g = host.CleanRows(need=3, ceiling=6, limit=12.0)
+    for v in (5, 20, 6, 30):
+        assert g.verdict() is None
+        g.add(v)
+    assert (g.clean, g.measured) == (2, 4) and g.verdict() is None
+    g.add(7)
+    assert g.verdict() == "complete"
+    r = host.CleanRows(need=3, ceiling=4, limit=12.0)
+    for v in (5, 20, 20, 20):
+        r.add(v)
+    assert r.verdict() == "refused" and r.summary()["clean"] == 1
+
+
+def test_a_bench_ends_its_run_at_its_clean_rows(tmp_path, monkeypatch):
+    """The gate ends the run itself: its record closed, the exit code complete (0)."""
+    import json
+    from wheeledlab_bench import bench as bmod
+    exits = []
+
+    class Exit(Exception):
+        pass
+
+    def fake_exit(code):
+        exits.append(code)
+        raise Exit
+    monkeypatch.setattr(bmod.os, "_exit", fake_exit)
+    b = bmod.Bench(str(tmp_path / "r"), "x", 4, warmup=1, mode="off", smi_every=0,
+                   clean_rows=2, max_rows=5, outside_limit=1e9)
+    b._torch = None
+    try:
+        for _ in range(10):
+            b.begin()
+            b.steps = 1
+            b.end_iteration()
+    except Exit:
+        pass
+    assert exits == [0]
+    s = json.loads((tmp_path / "r" / "summary.json").read_text())
+    assert s["closed"] is True and s["clean_rows"]["verdict"] == "complete"
+    assert s["clean_rows"]["clean"] == 2 and s["iterations"] == 3
+    rows = (tmp_path / "r" / "iterations.csv").read_text().splitlines()
+    assert rows[0].endswith("outside_cpu,own_cpu,clean") and rows[1].endswith(",")  # warm-up: no flag

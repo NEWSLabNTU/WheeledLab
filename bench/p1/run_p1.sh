@@ -35,6 +35,12 @@ export VK_ICD_FILENAMES=${VK_ICD_FILENAMES:-/usr/share/vulkan/icd.d/nvidia_icd.j
 # WAIT_IDLE seconds (wheeledlab_bench refuses with exit 6 after that)
 gate=(--require-idle --max-load "${MAX_LOAD:-0.5}" --wait-idle "${WAIT_IDLE:-1800}")
 [ "${IDLE_OTHERS:-0}" = 1 ] && gate+=(--idle-others-ok)
+# CLEAN_ROWS=N: the continuous gate. A point measures until it has N rows with the CPU outside
+# its own process tree within MAX_LOAD x cores, at most MAX_ROWS (default 4 N) measured rows
+# (exit 7 then); training runs for enough iterations and the harness ends it
+if [ -n "${CLEAN_ROWS:-}" ] && [ "${SHARED:-0}" != 1 ]; then
+    gate+=(--clean-rows "$CLEAN_ROWS" --max-rows "${MAX_ROWS:-$((4 * CLEAN_ROWS))}")
+fi
 [ "${SHARED:-0}" = 1 ] && gate=(--allow-shared)
 mkdir -p "$out/$stage"
 # training writes to source/wheeledlab_rl/logs/<run_name>; the out-dir's name is in it, so two
@@ -46,6 +52,9 @@ TRAIN=(source/wheeledlab_rl/scripts/train_rl.py -r RSS_DRIFT_CONFIG train.log.no
 # one training run through the harness: <name> <cameras 0|1> <timers> <seed> <n_envs> <iters> <warmup>
 run() {
     local name=$1 cam=$2 timers=$3 seed=$4 n=$5 iters=$6 warmup=$7
+    # the continuous gate ends the run itself: room for warm-up and every measured row
+    [ -n "${CLEAN_ROWS:-}" ] && [ "${SHARED:-0}" != 1 ] && \
+        iters=$((warmup + ${MAX_ROWS:-$((4 * CLEAN_ROWS))} + 1))
     local d="$out/$stage/$name"
     if [ -f "$d/summary.json" ] && grep -q '"closed": true' "$d/summary.json"; then
         echo "$name: done already"; return 0
