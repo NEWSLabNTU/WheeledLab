@@ -43,6 +43,19 @@ from . import hooks
 from .bench import Bench
 
 
+def _where(prov, key):
+    """A dirty part named by provenance.dirty, with its path and files."""
+    if key.startswith("deps."):
+        d = prov["deps"][key[5:]]
+    elif ".submodules." in key:
+        top, path = key.split(".submodules.", 1)
+        d = next(m for m in prov[top]["submodules"] if m["path"] == path)
+        d = dict(d, path=os.path.join(prov[top].get("repo", ""), path))
+    else:
+        d = prov[key]
+    return f"{key} ({d.get('path')}: {', '.join(d.get('dirty_files', []))})"
+
+
 def main(argv=None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     if "--" not in argv:
@@ -89,6 +102,9 @@ def main(argv=None) -> int:
     ap.add_argument("--task-package", default=None, metavar="NAME",
                     help="the task's top-level package (wheeledlab_tasks, p4_leadbrake, "
                          "scensim_batch): its commit and dirty flag go into meta.json")
+    ap.add_argument("--dep-package", action="append", default=[], metavar="NAME",
+                    help="a package the task imports from another checkout (repeatable): its "
+                         "commit and dirty flag go into meta.json's provenance.deps")
     ap.add_argument("--allow-dirty", action="store_true",
                     help="run although the harness or the task package has uncommitted changes "
                          "(recorded); by default such a run is refused")
@@ -134,11 +150,13 @@ def main(argv=None) -> int:
     prov = {"harness": provenance.harness()}
     if a.task_package:
         prov["task"] = provenance.of_package(a.task_package)
+    if a.dep_package:
+        prov["deps"] = {n: provenance.of_package(n) for n in a.dep_package}
     unclean = provenance.dirty(prov)
     if unclean and not a.allow_dirty:
         print("wheeledlab_bench: uncommitted changes in " + "; ".join(
-              f"{k} ({prov[k]['path']}: {', '.join(prov[k].get('dirty_files', []))})"
-              for k in unclean) + "; commit them, or --allow-dirty (recorded)", file=sys.stderr)
+              _where(prov, k) for k in unclean) + "; commit them, or --allow-dirty (recorded)",
+              file=sys.stderr)
         return 5
     prov["allow_dirty"] = a.allow_dirty
 
